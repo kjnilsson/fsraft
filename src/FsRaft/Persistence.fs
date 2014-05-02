@@ -2,14 +2,13 @@
 
 open System
 open System.IO
-open FsPickler
 
 module Persistence =
 
     open System
     open System.IO
-    open FsPickler
     open FSharpx
+    open Nessos.FsPickler
 
     type TermProtocol =
         | Write of AsyncReplyChannel<unit> * (int64 * Guid option)
