@@ -414,6 +414,7 @@ module Raft =
                                 // TODO should we really ignore here? propbably
                                 //rc.Reply (VoteResult { Term = state.Term.Current; VoteGranted = false })
                                 return! follow (setTerm rvr.Term state) 
+                        | _ -> return! candidate state
                     | Some (from, msg, None) ->
                         match msg with
                         | VoteResult vr when vr.Term > state.Term.Current ->
