@@ -2,11 +2,10 @@
 open System.Threading
 open System.IO
 open FSharpx
+open Nessos.FsPickler
 open FsRaft
 open FsRaft.Messages
 
-
-open FsPickler
 
 type Network =
     | Register of Guid * (Endpoint -> byte [] -> Async<byte[]>)
