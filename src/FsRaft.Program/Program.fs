@@ -43,7 +43,9 @@ let makeNetwork () =
                     match Map.tryFind f secondary, Map.tryFind t secondary with
                     | Some _, Some (rpc) -> 
                         rc.Reply rpc
-                    | _ -> printfn "no rpc endpoint"; ()
+                    | _ -> 
+//                        printfn "\r\nno rpc endpoint %A %A" f t ; 
+                        ()
                 return! loop (primary, secondary)
             | Isolate ->
                 let x = randomKey primary 
@@ -143,7 +145,9 @@ let validate (peers : RaftAgent<TestState> list) =
         |> Seq.distinct
         |> Seq.length = 1
     if isValid = false then
-        peers |> List.iter (fun x -> printfn "State: %A" (x.State()))   
+        peers |> List.iter (fun x -> 
+            let a, b, _ = x.State()
+            printfn "State: %A %i %i" x.Id a b   )
     let _, s, _ = peers.Head.State()
     isValid, s 
 
@@ -178,9 +182,9 @@ let basic silent =
         let leaderId = Guid.NewGuid()
 //        let send = send network
         let leader, leaderConfig = makeLeader leaderId network
-        let peers = leader :: ([0..4] |> List.map (fun _ -> fst <| createPeer silent network leader))
-        for x = 0 to 10 do
-            do! Async.Sleep 100
+        let peers = leader :: ([0..6] |> List.map (fun _ -> fst <| createPeer silent network leader))
+        for x = 0 to 100 do
+            do! Async.Sleep 50
             if not silent then printf "*"
             leader.Post (ClientCommand (randomOp()))
         awaitPeers peers |> ignore
@@ -193,13 +197,13 @@ let isolateSome silent =
         let network = makeNetwork()
         let leaderId = Guid.NewGuid()
         let leader,_ = makeLeader leaderId network
-        let peers = leader :: ([0..6] |> List.map (fun _ -> fst <| createPeer silent network leader))
+        let peers = leader :: ([0..2] |> List.map (fun _ -> fst <| createPeer silent network leader))
         for x = 0 to 250 do
             if x = 50 then network.Post Isolate
             if x = 65 then network.Post (IsolateX leaderId)
             if x = 165 then network.Post Isolate
             if x = 190  then network.Post Heal
-            do! Async.Sleep 25
+            do! Async.Sleep 50
             if not silent then printf "*"
             leader.Post (ClientCommand (randomOp()))
         awaitPeers peers |> ignore
@@ -223,8 +227,7 @@ let isolate2 silent =
             if not silent then printf "*"
             let p = randomPeer peers
             leader.Post (ClientCommand (randomOp()))
-//        awaitPeers peers |> ignore
-        Thread.Sleep 10000
+        awaitPeers peers |> ignore
         let isValid = validate peers
         disposePeers peers
         return isValid } 
@@ -256,10 +259,10 @@ let restore silent =
 
 [<EntryPoint>]
 let main argv = 
-    let silent = false
+    let silent = true
     Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
-//    Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
-//    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
-//    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
+    Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
+    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
+    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
     Console.ReadLine () |> ignore
     0
