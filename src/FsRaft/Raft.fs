@@ -474,7 +474,9 @@ module Raft =
                             result aer true state' |> rc.Reply
                         | None -> ()
 
-                        assert (aer.PrevLogTermIndex.Index + aer.Entries.Length >= state'.Log.Index.Count)
+                        if not (aer.PrevLogTermIndex.Index + aer.Entries.Length >= state'.Log.Index.Count) then
+                            printfn "UGH: %s %A" shortId aer.PrevLogTermIndex
+                        else ()
                         return! follow state'
                     
                     | RequestVoteRpc rvr when not (containsPeer state from) ->
@@ -505,7 +507,7 @@ module Raft =
                         match state.Leader with
                         | Some leader ->
                             debug "%s follower: forwarding command: %s to %s" shortId (typeName msg) (short leader)
-                            let! response = send leader msg
+                            send leader msg |> Async.Ignore |> Async.Start
                             ()
                         | None -> ()
                         return! follow state
@@ -589,6 +591,6 @@ module Raft =
             member this.Dispose () = 
                 //dispose subscriber
                 this.PostAndAsyncReply (Guid.NewGuid(), Exit) |> Async.RunSynchronously |> ignore
-                dispose agent
-                dispose config.LogStream
-                dispose config.TermStream
+//                dispose agent
+//                dispose config.LogStream
+//                dispose config.TermStream
