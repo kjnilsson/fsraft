@@ -2,10 +2,10 @@
 
 open System
 open System.IO
-
 open FSharpx
 open FSharpx.State
 open FSharpx.Lens.Operators
+open Nessos.FsPickler
 
 [<AutoOpen>]
 module Raft =
@@ -20,7 +20,7 @@ module Raft =
           LogStream : Stream 
           TermStream : Stream }
 
-    let pickler = new FsPickler.FsPickler()
+    let pickler = new FsPickler()
 
     let deserialize (x:byte[]) =
         use s = new IO.MemoryStream(x)
