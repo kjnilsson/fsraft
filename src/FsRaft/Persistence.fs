@@ -10,9 +10,9 @@ module Persistence =
     open FSharpx
     open Nessos.FsPickler
 
-    type TermProtocol =
+    type private TermProtocol =
         | Write of AsyncReplyChannel<unit> * (int64 * Guid option)
-        | Read of AsyncReplyChannel<int64 * Guid option>
+        | Exit of AsyncReplyChannel<unit>
 
     type TermContext (stream : Stream) =
         let mutable cache : (int64 * Guid option) = 0L, None 
@@ -20,12 +20,18 @@ module Persistence =
         let agent =
             MailboxProcessor.Start (fun inbox ->
                 let rec loop (state : Stream) = async {
-                    let! (rc : AsyncReplyChannel<unit>), data = inbox.Receive ()        
-                    state.Position <- 0L
-                    let data = pickler.Serialize (state, data)
-                    state.Flush()
-                    rc.Reply()
-                    return! loop state }
+//                    let! (rc : AsyncReplyChannel<unit>), data = inbox.Receive ()        
+                    let! msg = inbox.Receive ()        
+                    match msg with 
+                    | Write (rc, data) ->
+                        state.Position <- 0L
+                        let data = pickler.Serialize (state, data)
+                        state.Flush()
+                        rc.Reply()
+                        return! loop state
+                    | Exit rc ->
+                        dispose state
+                        rc.Reply() }
                 loop stream)
 
         do
@@ -38,17 +44,22 @@ module Persistence =
             with get () = fst cache
             and set (t : int64) =
                 if t > fst cache then 
-                    agent.PostAndReply (fun rc -> rc, (t, None))
+                    agent.PostAndReply (fun rc -> Write (rc, (t, None)))
                     cache <- t, None
 
         member this.VotedFor 
             with get() = snd cache
             and set votedFor =
                 if snd cache = None then
-                    agent.PostAndReply (fun rc ->  rc, (fst cache, votedFor))
+                    agent.PostAndReply (fun rc ->  Write (rc, (fst cache, votedFor)))
                     cache <- fst cache, votedFor
 
         member this.Error = agent.Error
+
+        interface IDisposable with
+            member this.Dispose () =
+                agent.PostAndReply(fun rc -> Exit rc)
+                dispose agent
 
     //logs
     type Record = (int * int64 * obj)   //index, term, type
@@ -56,14 +67,21 @@ module Persistence =
     let createRecord index term x : Record =
         index, term, x
 
-    type Protocol =
+    type private LogProtocol =
         | Read of AsyncReplyChannel<Record> * int64
         | Write of AsyncReplyChannel<int64> * Record
+        | Exit of AsyncReplyChannel<unit>
+
+    type LogAgent = MailboxProcessor<LogProtocol>
 
     type LogContext =
         { Index : Map<int, int64 * int64> //log index, term, offset
-          Agent : MailboxProcessor<Protocol>
+          Agent : LogAgent 
           NextIndex : int }
+        interface IDisposable with
+            member x.Dispose () =
+                x.Agent.PostAndReply (fun rc -> Exit rc)
+                dispose x.Agent
 
     let registry = CustomPicklerRegistry ("raft")
 //    registry.SetTypeNameConverter (new DefaultTypeNameConverter(false))
@@ -80,13 +98,12 @@ module Persistence =
         [index + 1 .. largest]
         |> List.fold (flip Map.remove) m
 
-    let writeRecord (context : LogContext) (r : Record) =
-        let agent = context.Agent
+    let writeRecord ({ Agent = agent; NextIndex = nextIndex } as context) (r : Record) =
         let idx, term, _ = r
-        if idx > context.NextIndex then 
+        if idx > nextIndex then 
             failwith "Attempt to write log entry that would leave a gap in the log - this should never happen"
 
-        let pos = agent.PostAndReply (fun rc -> Write (rc, r))
+        let pos = agent.PostAndReply ((fun rc -> Write (rc, r)), 2000)
         
         { context with 
             Index = 
@@ -94,9 +111,8 @@ module Persistence =
                 |> truncateHigher idx context.NextIndex // remove higher indexes as these should be considered stale
             NextIndex = idx + 1 }
 
-    let private readRecord context pos read : Record =
-        let agent = context.Agent
-        agent.PostAndReply(fun rc -> Read (rc, pos))
+    let private readRecord { Agent = agent } pos read : Record =
+        agent.PostAndReply((fun rc -> Read (rc, pos)), 2000)
 
     let private tryReadRecord context pos read =
         Option.protect (fun () -> readRecord context pos read)
@@ -170,10 +186,14 @@ module Persistence =
                     write stream r
                     stream.Flush()
                     rc.Reply pos
+                    return! loop stream 
                 | Read (rc, pos) ->
                     stream.Position <- pos
                     rc.Reply (read stream)
-                return! loop stream }
+                    return! loop stream 
+                | Exit rc ->
+                    dispose stream
+                    rc.Reply() }
             loop stream)
 
         agent.Error.Add raise

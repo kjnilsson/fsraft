@@ -260,8 +260,9 @@ module Raft =
                     match msg with
                     | Exit -> 
                         dispose heartbeat
+                        dispose state
                         Option.iter (fun (rc : AsyncReplyChannel<RaftProtocol>) -> rc.Reply Exit) rc
-                        debug "exiting"
+                        printfn "exiting"
                     | AppendEntriesRpc aer when aer.Term >= state.Term.Current ->
                         debug "%s leader: AppendEntriesRpc received with greater or equal term %i from %A - stepping down" shortId aer.Term from
                         inbox.Post(from, msg, rc) // self post and handle as follower
@@ -387,6 +388,7 @@ module Raft =
                     | Some (from, msg, Some rc) ->
                         match msg with
                         | Exit -> 
+                            dispose state
                             printfn "exiting"
                             rc.Reply Exit
                         | AppendEntriesRpc aer when aer.Term >= state.Term.Current ->
@@ -440,6 +442,7 @@ module Raft =
                     match msg with
                     | Exit -> 
                         printfn "exiting"
+                        dispose state
                         Option.iter (fun (rc : AsyncReplyChannel<RaftProtocol>) -> rc.Reply Exit) rc
                     | AppendEntriesRpc aer when aer.Term < state.Term.Current ->
                         debug "%s follower: AppendEntriesRpc received with lower term: %i current term: %i" shortId aer.Term state.Term.Current 
@@ -538,7 +541,7 @@ module Raft =
                     | AppendEntriesRpc aer ->
                         debug "%s pending: AppendEntriesRpc start message received" shortId
                         let logContext = makeContext config.LogStream
-                        let termContext = Persistence.TermContext config.TermStream
+                        let termContext = new Persistence.TermContext (config.TermStream)
                         let s =
                             RaftState.create id logContext termContext
                             |> applyLogsFollower logger.Trigger stateApply aer.LeaderCommit  
@@ -553,7 +556,7 @@ module Raft =
                     | _ -> 
                         debug "%s pending: other start message received" shortId
                         let logContext = makeContext config.LogStream
-                        let termContext = Persistence.TermContext config.TermStream
+                        let termContext = new Persistence.TermContext (config.TermStream)
                         if logContext.NextIndex > 1 then 
                             failwith "%s pending: Not Good! - starting node with previous logs without a commit index can be fatal" shortId
                         stateMachine.Changes.Add changes.Trigger
@@ -591,6 +594,4 @@ module Raft =
             member this.Dispose () = 
                 //dispose subscriber
                 this.PostAndAsyncReply (Guid.NewGuid(), Exit) |> Async.RunSynchronously |> ignore
-//                dispose agent
-//                dispose config.LogStream
-//                dispose config.TermStream
+                dispose agent

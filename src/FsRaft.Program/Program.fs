@@ -13,6 +13,7 @@ type Network =
     | Isolate
     | IsolateX of Guid
     | Heal
+    | Shutdown of AsyncReplyChannel<unit>
 
 let rand = 
     let random = Random()
@@ -33,6 +34,9 @@ let makeNetwork () =
         let rec loop (primary, secondary) = async {
             let! msg = inbox.Receive ()
             match msg with
+            | Shutdown rc ->
+                printfn "exiting network"
+                rc.Reply ()
             | Register (i, rpc) ->
                 return! loop <| (Map.add i (rpc) primary, secondary)
             | Rpc (f, t, rc) ->
@@ -49,13 +53,13 @@ let makeNetwork () =
                 return! loop (primary, secondary)
             | Isolate ->
                 let x = randomKey primary 
-                printfn "\r\nIsolating: %A\r\n" (short x)
+                printfn "Isolating: %A" (short x)
                 return! loop (move x primary secondary)
             | IsolateX x ->
-                printfn "\r\nIsolating: %A\r\n" (short x)
+                printfn "Isolating: %A" (short x)
                 return! loop (move x primary secondary)
             | Heal ->
-                printfn "\r\nHealing network\r\n"
+                printfn "Healing network"
                 return! loop (Map.merge primary secondary, Map.empty) }
         loop (Map.empty, Map.empty))
 
@@ -189,6 +193,7 @@ let basic silent =
             leader.Post (ClientCommand (randomOp()))
         awaitPeers peers |> ignore
         let isValid = validate peers
+        network.PostAndReply (fun rc -> Shutdown rc)
         disposePeers peers
         return isValid } 
 
@@ -208,6 +213,7 @@ let isolateSome silent =
             leader.Post (ClientCommand (randomOp()))
         awaitPeers peers |> ignore
         let isValid = validate peers
+        network.PostAndReply (fun rc -> Shutdown rc)
         disposePeers peers
         return isValid } 
 
@@ -229,6 +235,7 @@ let isolate2 silent =
             leader.Post (ClientCommand (randomOp()))
         awaitPeers peers |> ignore
         let isValid = validate peers
+        network.PostAndReply (fun rc -> Shutdown rc)
         disposePeers peers
         return isValid } 
 
@@ -254,6 +261,7 @@ let restore silent =
         events.Trigger (leaderId, AppendEntriesRpc aer)
         awaitPeers [test] |> ignore
         let isValid = validate [leader;test]
+        network.PostAndReply (fun rc -> Shutdown rc)
         disposePeers peers
         return isValid } 
 
@@ -263,6 +271,6 @@ let main argv =
     Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
     Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
     Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
-    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
+//    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
     Console.ReadLine () |> ignore
     0

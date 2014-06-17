@@ -59,6 +59,10 @@ module Model =
             Leader = None
             CommitIndex = 0
             Config = Normal { Peers = Map.empty } }
+        interface IDisposable with
+            member x.Dispose () =
+                dispose x.Log
+                dispose x.Term
 
 module Log =
     open FsRaft.Persistence
