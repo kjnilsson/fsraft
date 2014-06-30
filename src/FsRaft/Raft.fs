@@ -541,7 +541,7 @@ module Raft =
                     | AppendEntriesRpc aer ->
                         debug "%s pending: AppendEntriesRpc start message received" shortId
                         let logContext = makeContext config.LogStream
-                        let termContext = new Persistence.TermContext (config.TermStream)
+                        let termContext = new TermContext (config.TermStream)
                         let s =
                             RaftState.create id logContext termContext
                             |> applyLogsFollower logger.Trigger stateApply aer.LeaderCommit  
@@ -556,7 +556,7 @@ module Raft =
                     | _ -> 
                         debug "%s pending: other start message received" shortId
                         let logContext = makeContext config.LogStream
-                        let termContext = new Persistence.TermContext (config.TermStream)
+                        let termContext = new TermContext (config.TermStream)
                         if logContext.NextIndex > 1 then 
                             failwith "%s pending: Not Good! - starting node with previous logs without a commit index can be fatal" shortId
                         stateMachine.Changes.Add changes.Trigger
