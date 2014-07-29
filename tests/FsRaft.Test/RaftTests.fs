@@ -5,8 +5,7 @@ open System
 open System.IO
 open NUnit.Framework
 open FsRaft
-open FsRaft.LogPersistence
-open FsRaft.TermPersistence
+open FsRaft.Persistence
 
 
 module RaftTests_castVote =
