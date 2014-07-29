@@ -240,6 +240,13 @@ module Messages =
         | RpcFail
         | Exit  
 
+        static member parse (o : obj) =
+            match o with
+            | :? AppendEntriesRpcData as i -> AppendEntriesRpc i 
+            | :? AppendEntriesResultData as i -> AppendEntriesResult i 
+            | :? RequestVoteRpcData as i -> RequestVoteRpc i 
+            | :? VoteResultData as i -> VoteResult i 
+
 [<AutoOpen>]
 module Events =
 

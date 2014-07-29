@@ -70,11 +70,11 @@ module RaftTests_castVote =
 
     [<Test>]
     let ``applyLogs should not apply a command entries twice when commit index is incremented`` () =
-        let id = Guid.NewGuid()
+        let id = Guid.NewGuid(), "", 0
         use stream = new MemoryStream () 
         use termStream = new MemoryStream () 
         let context = makeContext stream
-        let termContext = TermContext termStream
+        let termContext = new TermContext (termStream)
 
         let appliedCount = ref 0
         let apply = fun _ _ -> appliedCount := !appliedCount + 1
@@ -88,11 +88,11 @@ module RaftTests_castVote =
 
     [<Test>]
     let ``applyLogs follower should not advance commit index beyond the highest index of all received logs`` () =
-        let id = Guid.NewGuid()
+        let id = Guid.NewGuid(), "", 0
         use stream = new MemoryStream () 
         use termStream = new MemoryStream () 
         let context = makeContext stream
-        let termContext = TermContext termStream
+        let termContext = new TermContext(termStream)
         let apply = fun _ _ -> ()
 
         let raftState = RaftState.create id context termContext |> addEntries 5
@@ -106,15 +106,15 @@ module RaftTests_castVote =
         use stream = new MemoryStream () 
         let context = makeContext stream
         use termStream = new MemoryStream () 
-        let termContext = TermContext termStream
+        let termContext = new TermContext (termStream)
 
-        let peer1Id, peer1 = Guid.NewGuid(), Peer.create()
-        let peer2Id, peer2 = Guid.NewGuid(), Peer.create()
+        let peer1Id, peer1 = (Guid.NewGuid(), "", 0), Peer.create()
+        let peer2Id, peer2 = (Guid.NewGuid(), "", 0), Peer.create()
         let c1 = { Peers = [peer1Id, peer1] |> Map.ofList }
         let c2 = { Peers = [peer1Id, peer1; peer2Id, peer2] |> Map.ofList } //next index change here is to simulate progress being made for replication of other logs
         let c2' = { c2 with Peers = c2.Peers |> Map.map (fun k v -> {v with NextIndex = 10 }) }
         let config = Joint(c1, c2)
-        let state = RaftState.create (Guid.NewGuid()) context termContext
+        let state = RaftState.create (Guid.NewGuid(), "", 0) context termContext
         let stateConfig = Joint(c1, c2' )
         let state = { state with Config = stateConfig }
         

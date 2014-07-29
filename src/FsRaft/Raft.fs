@@ -185,10 +185,6 @@ module Raft =
         let id, _, _ = config.Id
         let ep = config.Id
         let shortId = (short id)
-        let send peer (msg : RaftProtocol) = 
-            async {
-                let! response = config.Send peer (serialize msg) 
-                return response |> deserialize }
         // logging
         let logger = Event<RaftLogEntry>()
         let debug msg = debug "raft" logger msg
@@ -223,6 +219,22 @@ module Raft =
 
         let queueLen = Event<int>()
         let agent = MailboxProcessor<Endpoint * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
+
+            let rpcAgent = Rpc.DuplexRpcListener(config.Id, fun ident data -> 
+                async {
+                    let p = deserialize data
+                    let p = p
+                    let! result = inbox.PostAndAsyncReply  (fun rc -> ident, p, Some rc)
+                    return serialize (result) })
+
+            let send peer (msg : RaftProtocol) = 
+                async {
+                    let m = serialize msg
+                    let m = m
+                    let! response = rpcAgent.Request(peer, m)
+                    match response with
+                    | Some res -> return deserialize res
+                    | None -> return RpcFail }
 
             let receive () = 
                 queueLen.Trigger inbox.CurrentQueueLength

@@ -90,11 +90,14 @@ let apply (c : byte[]) (count, s, commands) =
     | Add n -> count + 1, s + n, c :: commands
     | Div n -> count + 1, s / n, c :: commands
 
-let create (network : MailboxProcessor<Network>) id = 
-    let ep = id, "", 0
+let create (network : MailboxProcessor<Network>) id port = 
+    let ep = id, "127.0.0.1", port
     let config = 
         { Id = ep
-          Send = call network ep
+//          Send = call network ep
+          Send = (fun ep data -> 
+            async {
+                return [||] })
           Register = fun () -> ()
           LogStream = new MemoryStream()
           TermStream = new MemoryStream() }
@@ -104,7 +107,7 @@ let create (network : MailboxProcessor<Network>) id =
         async {
             let! result = agent.PostAndAsyncReply  (f, deserialize data)
             return serialize result }
-    network.Post (Register (id, rpc))
+//    network.Post (Register (id, rpc))
 //    agent.LogEntry.Add (printfn "%A")
     agent, config
     
@@ -114,22 +117,22 @@ let create (network : MailboxProcessor<Network>) id =
 //    | Error -> printfn "%s - %s [%A] '%s' \r\nException: %A" now entry.Source.Category entry.Level entry.Data.Message entry.Data.Exception
 //    | Warn -> printfn "%s - %s [%A] '%s'" now entry.Source.Category entry.Level entry.Data.Message
 //    | _ -> () // 
-
-
+//
+//
 //addLoggingTransport "console" { Transport.Send = consoleLogger }
 
-let makeLeader id network  =
-    let l, config = create network id  
+let makeLeader id network port  =
+    let l, config = create network id port
     l.Post (ClientCommand <| (serialize <| Add 1))
 //    send network id id (ClientCommand <| (serialize <| Add 1))
     Threading.Thread.Sleep 2500 // allow leader time to become leader
     l, config
     
 
-let createPeer silent (network : MailboxProcessor<Network>) (leader : RaftAgent<TestState>) =
+let createPeer silent (network : MailboxProcessor<Network>) (leader : RaftAgent<TestState>) port =
     let id = Guid.NewGuid()
     printfn "creating peer: %s" (short id)
-    let p, config = create network id 
+    let p, config = create network id port
     if not silent then
         p.Changes.Add(fun _ -> printf ".")
     leader.AddPeer config.Id
@@ -186,8 +189,8 @@ let basic silent =
         let network = makeNetwork()
         let leaderId = Guid.NewGuid()
 //        let send = send network
-        let leader, leaderConfig = makeLeader leaderId network
-        let peers = leader :: ([0..6] |> List.map (fun _ -> fst <| createPeer silent network leader))
+        let leader, leaderConfig = makeLeader leaderId network 1236
+        let peers = leader :: ([0..6] |> List.map (fun p -> fst <| createPeer silent network leader (4321 + p)))
         for x = 0 to 100 do
             do! Async.Sleep 50
             if not silent then printf "*"
@@ -198,80 +201,80 @@ let basic silent =
         disposePeers peers
         return isValid } 
 
-let isolateSome silent =
-    async {
-        let network = makeNetwork()
-        let leaderId = Guid.NewGuid()
-        let leader,_ = makeLeader leaderId network
-        let peers = leader :: ([0..2] |> List.map (fun _ -> fst <| createPeer silent network leader))
-        for x = 0 to 250 do
-            if x = 50 then network.Post Isolate
-            if x = 65 then network.Post (IsolateX leaderId)
-            if x = 165 then network.Post Isolate
-            if x = 190  then network.Post Heal
-            do! Async.Sleep 50
-            if not silent then printf "*"
-            leader.Post (ClientCommand (randomOp()))
-        awaitPeers peers |> ignore
-        let isValid = validate peers
-        network.PostAndReply (fun rc -> Shutdown rc)
-        disposePeers peers
-        return isValid } 
-
-let isolate2 silent =
-    async {
-        let network = makeNetwork()
-        let leaderId = Guid.NewGuid()
-        let leader,_ = makeLeader leaderId network
-        let peers = leader :: ([0..6] |> List.map (fun _ -> fst <| createPeer silent network leader))
-        for x = 0 to 250 do
-            if x = 50 then network.Post Isolate
-            if x = 55  then network.Post Isolate
-            if x = 95 then network.Post Heal
-            if x = 165 then network.Post Isolate
-            if x = 190  then network.Post Heal
-            do! Async.Sleep 35
-            if not silent then printf "*"
-            let p = randomPeer peers
-            leader.Post (ClientCommand (randomOp()))
-        awaitPeers peers |> ignore
-        let isValid = validate peers
-        network.PostAndReply (fun rc -> Shutdown rc)
-        disposePeers peers
-        return isValid } 
-
-let restore silent =
-    async {
-        let network = makeNetwork()
-        let leaderId = Guid.NewGuid()
-        let leader, config = makeLeader leaderId network
-        let peers = [leader]
-        for x = 0 to 50 do
-            do! Async.Sleep 25
-            if not silent then printf "*"
-            leader.Post (ClientCommand (randomOp()))
-        awaitPeers peers |> ignore
-        let events = Event<Guid * RaftProtocol>()
-        let test = new RaftAgent<TestState> (config, (0,0,[]), apply)
-        let aer = 
-            { Messages.AppendEntriesRpcData.Term = 1L
-              Messages.AppendEntriesRpcData.LeaderId = leaderId
-              Messages.AppendEntriesRpcData.PrevLogTermIndex = TermIndex.Default 
-              Messages.AppendEntriesRpcData.Entries = [] 
-              Messages.AppendEntriesRpcData.LeaderCommit = 101 } // extra margin here
-        events.Trigger (leaderId, AppendEntriesRpc aer)
-        awaitPeers [test] |> ignore
-        let isValid = validate [leader;test]
-        network.PostAndReply (fun rc -> Shutdown rc)
-        disposePeers peers
-        return isValid } 
+//let isolateSome silent =
+//    async {
+//        let network = makeNetwork()
+//        let leaderId = Guid.NewGuid()
+//        let leader,_ = makeLeader leaderId network
+//        let peers = leader :: ([0..2] |> List.map (fun _ -> fst <| createPeer silent network leader))
+//        for x = 0 to 250 do
+//            if x = 50 then network.Post Isolate
+//            if x = 65 then network.Post (IsolateX leaderId)
+//            if x = 165 then network.Post Isolate
+//            if x = 190  then network.Post Heal
+//            do! Async.Sleep 50
+//            if not silent then printf "*"
+//            leader.Post (ClientCommand (randomOp()))
+//        awaitPeers peers |> ignore
+//        let isValid = validate peers
+//        network.PostAndReply (fun rc -> Shutdown rc)
+//        disposePeers peers
+//        return isValid } 
+//
+//let isolate2 silent =
+//    async {
+//        let network = makeNetwork()
+//        let leaderId = Guid.NewGuid()
+//        let leader,_ = makeLeader leaderId network
+//        let peers = leader :: ([0..6] |> List.map (fun _ -> fst <| createPeer silent network leader))
+//        for x = 0 to 250 do
+//            if x = 50 then network.Post Isolate
+//            if x = 55  then network.Post Isolate
+//            if x = 95 then network.Post Heal
+//            if x = 165 then network.Post Isolate
+//            if x = 190  then network.Post Heal
+//            do! Async.Sleep 35
+//            if not silent then printf "*"
+//            let p = randomPeer peers
+//            leader.Post (ClientCommand (randomOp()))
+//        awaitPeers peers |> ignore
+//        let isValid = validate peers
+//        network.PostAndReply (fun rc -> Shutdown rc)
+//        disposePeers peers
+//        return isValid } 
+//
+//let restore silent =
+//    async {
+//        let network = makeNetwork()
+//        let leaderId = Guid.NewGuid()
+//        let leader, config = makeLeader leaderId network
+//        let peers = [leader]
+//        for x = 0 to 50 do
+//            do! Async.Sleep 25
+//            if not silent then printf "*"
+//            leader.Post (ClientCommand (randomOp()))
+//        awaitPeers peers |> ignore
+//        let events = Event<Guid * RaftProtocol>()
+//        let test = new RaftAgent<TestState> (config, (0,0,[]), apply)
+//        let aer = 
+//            { Messages.AppendEntriesRpcData.Term = 1L
+//              Messages.AppendEntriesRpcData.LeaderId = leaderId
+//              Messages.AppendEntriesRpcData.PrevLogTermIndex = TermIndex.Default 
+//              Messages.AppendEntriesRpcData.Entries = [] 
+//              Messages.AppendEntriesRpcData.LeaderCommit = 101 } // extra margin here
+//        events.Trigger (leaderId, AppendEntriesRpc aer)
+//        awaitPeers [test] |> ignore
+//        let isValid = validate [leader;test]
+//        network.PostAndReply (fun rc -> Shutdown rc)
+//        disposePeers peers
+//        return isValid } 
 
 [<EntryPoint>]
 let main argv = 
     let silent = true
     Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
-    Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
-    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
+//    Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
+//    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
 //    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
     Console.ReadLine () |> ignore
     0

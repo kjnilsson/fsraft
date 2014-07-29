@@ -53,6 +53,7 @@
     <Compile Include="Persistence.fs" />
     <Compile Include="Model.fs" />
     <Compile Include="Heartbeat.fs" />
+    <Compile Include="Rpc.fs" />
     <Compile Include="Raft.fs" />
     <None Include="Persist.fsx" />
     <None Include="packages.config" />
