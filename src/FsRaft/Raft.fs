@@ -14,7 +14,7 @@ module Raft =
     open Persistence
 
     type RaftConfig =
-        { Id : Guid
+        { Id : Endpoint
           Send : Endpoint -> byte[] -> Async<byte[]> //from, to, message
           Register : unit -> unit
           LogStream : Stream 
@@ -31,7 +31,8 @@ module Raft =
         pickler.Serialize (s, x)
         s.ToArray()
 
-    type internal Logger = Event<RaftLogEntry>
+    let shortEp (id, _, _) =
+        short id
 
     let random = Random ()
 
@@ -43,7 +44,7 @@ module Raft =
     let applyConfigLeader log config state =
         match config, state.Config with
         | Joint (_, n), Joint (_, n') when Map.keys n.Peers = Map.keys n'.Peers -> // only add a log if receiving the log for the actual current configuration
-            log (Debug (sprintf "raft :: %s leader: switching to Normal configuration" (short state.Id) ))
+            log (Debug (sprintf "raft :: %s leader: switching to Normal configuration" (shortEp state.Id) ))
             let entry = Log.create state (ConfigEntry (Normal n'))
             Lens.set (Normal n') state Lenses.config // once joint config has been replicated immediately switch to new config - consensus isn't required.
             |> Lens.update (fun context -> Log.increment context entry) Lenses.log
@@ -60,14 +61,14 @@ module Raft =
             | Command cmd when e.TermIndex.Index <= commitIndex -> 
                 if e.TermIndex.Index <= state.CommitIndex then failwith "noooo"
                 #if DEBUG
-                log (Debug (sprintf "raft :: %s applying command for index: %i, commitIndex: %i" (short state.Id) e.TermIndex.Index commitIndex))
+                log (Debug (sprintf "raft :: %s applying command for index: %i, commitIndex: %i" (shortEp state.Id) e.TermIndex.Index commitIndex))
                 #endif
                 applyCommand isLeader cmd
                 { s with CommitIndex = e.TermIndex.Index }
             | Command _ -> s
             | ConfigEntry config -> 
                 #if DEBUG
-                log (Debug (sprintf "raft :: %s applying config for index: %i, commitIndex: %i" (short state.Id) e.TermIndex.Index commitIndex))
+                log (Debug (sprintf "raft :: %s applying config for index: %i, commitIndex: %i" (shortEp state.Id) e.TermIndex.Index commitIndex))
                 #endif
                 let newCommitIndex = min commitIndex e.TermIndex.Index
                 { applyConfig config s with CommitIndex = newCommitIndex }) state
@@ -129,7 +130,7 @@ module Raft =
                 Config = config 
                 Log = context }
         | _ ->
-            log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't add peer: %s" (short state.Id) (short peerId)))
+            log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't add peer: %s" (shortEp state.Id) (shortEp peerId)))
             state        
 
     let containsPeer (state : RaftState) peerId =
@@ -148,7 +149,7 @@ module Raft =
                 Config = config 
                 Log = context }
         | _ ->
-            log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't remove peer: %s" (short state.Id) (short peerId)))
+            log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't remove peer: %s" (shortEp state.Id) (shortEp peerId)))
             state        
 
 
@@ -181,7 +182,8 @@ module Raft =
 
 
     type RaftAgent<'TState when 'TState : equality> (config : RaftConfig, initialState, apply) =
-        let id = config.Id
+        let id, _, _ = config.Id
+        let ep = config.Id
         let shortId = (short id)
         let send peer (msg : RaftProtocol) = 
             async {
@@ -220,7 +222,7 @@ module Raft =
             state
 
         let queueLen = Event<int>()
-        let agent = MailboxProcessor<Guid * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
+        let agent = MailboxProcessor<Endpoint * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
 
             let receive () = 
                 queueLen.Trigger inbox.CurrentQueueLength
@@ -231,14 +233,14 @@ module Raft =
                 inbox.TryReceive t
         
             let rec lead state = async {
-                let heartbeat = new HeartbeatSuper (id, send, (fun e rp -> inbox.Post(e, rp, None)), state, logger.Trigger) // a use statement won't automatically call Dispose due to the mutual recursion.
+                let heartbeat = new HeartbeatSuper (ep, send, (fun e rp -> inbox.Post(e, rp, None)), state, logger.Trigger) // a use statement won't automatically call Dispose due to the mutual recursion.
                 let! t = Async.CancellationToken
                 t.Register (fun () -> dispose heartbeat) |> ignore
 
                 // this only here for the startup dance
                 Option.iterNone 
-                    (fun _ -> inbox.PostAndAsyncReply(fun rc -> id, AddPeer id, Some rc) |> Async.Ignore |> Async.Start ) 
-                    (Lenses.configPeer id |> Lens.get state)
+                    (fun _ -> inbox.PostAndAsyncReply(fun rc -> ep, AddPeer ep, Some rc) |> Async.Ignore |> Async.Start ) 
+                    (Lenses.configPeer ep |> Lens.get state)
                 
                 //update next and match index for all peers
                 let state =
@@ -256,7 +258,8 @@ module Raft =
                         evaluate logger.Trigger stateApply state
                         |> heartbeat.State
 
-                    let! from, msg, rc = receive ()
+                    let! fromEp, msg, rc = receive ()
+                    let from, _, _  = fromEp
                     match msg with
                     | Exit -> 
                         dispose heartbeat
@@ -265,18 +268,18 @@ module Raft =
                         printfn "exiting"
                     | AppendEntriesRpc aer when aer.Term >= state.Term.Current ->
                         debug "%s leader: AppendEntriesRpc received with greater or equal term %i from %A - stepping down" shortId aer.Term from
-                        inbox.Post(from, msg, rc) // self post and handle as follower
+                        inbox.Post(fromEp, msg, rc) // self post and handle as follower
                         return! follow (setTerm aer.Term state)
 
                     | AppendEntriesResult res when not res.Success && res.Term > state.Term.Current ->
                         debug "%s leader: AppendEntriesResult with greater Term %i received from %A - stepping down" shortId res.Term from
-                        inbox.Post(from, msg, rc) // self post and handle as follower
+                        inbox.Post(fromEp, msg, rc) // self post and handle as follower
                         return! follow (setTerm res.Term state)
                         
                     | AppendEntriesResult res when not res.Success -> // decrement next index for peer
                         debug "%s leader: append entries not successful - decrementing next index for peer: %s" shortId (short from) 
                         let update =
-                            Lenses.configPeer from
+                            Lenses.configPeer fromEp
                             |> Lens.update (Option.map
                                 (fun p -> { p with NextIndex = max p.MatchIndex (max 1 (p.NextIndex - 10)) })) // invariant - never go below match index or 0??
                         return! inner (update state)
@@ -288,14 +291,14 @@ module Raft =
                         // TODO: need to review and test this logic more
                         // what would you do if you received a AER with witha  LastEntryTermIndex higher than your current index?
                         let update =
-                            Lenses.configPeer from
+                            Lenses.configPeer fromEp
                             |> Lens.update (Option.map 
                                 (fun p -> { p with NextIndex = res.LastEntryTermIndex.Index + 1 
                                                    MatchIndex = res.LastEntryTermIndex.Index }))
 
                         return! inner (update state) 
                     
-                    | RequestVoteRpc rvr when not <| containsPeer state from ->
+                    | RequestVoteRpc rvr when not <| containsPeer state fromEp ->
                         debug "%s leader: RequestVoteRpc received from unknown peer: %s" shortId (short from)
                         return! inner state
 
@@ -313,7 +316,7 @@ module Raft =
                             return! follow <| setTerm rvr.Term state 
 
                     | AddPeer peerId ->
-                        debug "%s leader: AddPeer %s" shortId (short peerId)
+                        debug "%s leader: AddPeer %A" shortId peerId
                         return! inner (addPeer logger.Trigger clusterChanges state peerId)
 
                     | RemovePeer peerId ->
@@ -355,15 +358,17 @@ module Raft =
 //                            return! follow state 
 //                    | _ -> return! follow state
 
+                let stateId, _, _ = state.Id
+
                 let nextTerm = state.Term.Current + 1L
-                let state = setTermVotedFor { state with Leader = None } nextTerm state.Id
+                let state = setTermVotedFor { state with Leader = None } nextTerm stateId
                 warn "%s candidate: initiating election for term: %i" shortId state.Term.Current
 
                 peersExcept
                 |> Map.map (fun _ _ ->
                     RequestVoteRpc
                         { Term = state.Term.Current
-                          CandidateId = state.Id
+                          CandidateId = stateId
                           LastLogTermIndex = Log.lastTermIndex state.Log }) 
                 |> Map.map (fun k v ->
                     async {
@@ -385,7 +390,8 @@ module Raft =
                     
                     let! msg = tryReceive (electionTimout ())
                     match msg with
-                    | Some (from, msg, Some rc) ->
+                    | Some (fromEp, msg, Some rc) ->
+                        let from, _, _ = fromEp
                         match msg with
                         | Exit -> 
                             dispose state
@@ -393,7 +399,7 @@ module Raft =
                             rc.Reply Exit
                         | AppendEntriesRpc aer when aer.Term >= state.Term.Current ->
                             debug "%s candidate: AppendEntriesRpc received with greater or equal term %i >= %i - candidate withdrawing" shortId aer.Term state.Term.Current
-                            inbox.Post(from, msg, Some rc) //self post
+                            inbox.Post(fromEp, msg, Some rc) //self post
                             return! follow <| setTerm aer.Term state
 
                         | AppendEntriesRpc aer -> // ensure leader with lower term steps down
@@ -401,7 +407,7 @@ module Raft =
                             rc.Reply res
                             return! inner votes
 
-                        | RequestVoteRpc rvr when not <| containsPeer state from ->
+                        | RequestVoteRpc rvr when not <| containsPeer state fromEp ->
                             debug "%s candidate: RequestVoteRpc received from unknown peer: %s" shortId (short from)
                             //TODO figure out what to do here - reply or ignore?
                             return! candidate state
@@ -417,7 +423,7 @@ module Raft =
                                 //rc.Reply (VoteResult { Term = state.Term.Current; VoteGranted = false })
                                 return! follow (setTerm rvr.Term state) 
                         | _ -> return! candidate state
-                    | Some (from, msg, None) ->
+                    | Some ((from, _, _), msg, None) ->
                         match msg with
                         | VoteResult vr when vr.Term > state.Term.Current ->
                             debug "%s candidate: VoteResult received with greater term: %i from: %s - candidate withdrawing" shortId vr.Term (short from)
@@ -438,7 +444,7 @@ module Raft =
             and follow (state : RaftState) = async {
                 let! msg = tryReceive (electionTimout ())
                 match msg with
-                | Some (from, msg, rc) ->
+                | Some ((from, _, _) as fromEp, msg, rc) ->
                     match msg with
                     | Exit -> 
                         printfn "exiting"
@@ -482,7 +488,7 @@ module Raft =
                         else ()
                         return! follow state'
                     
-                    | RequestVoteRpc rvr when not (containsPeer state from) ->
+                    | RequestVoteRpc _ when not (containsPeer state fromEp) ->
                         debug "%s follower: RequestVoteRpc received from unknown peer: %s" shortId (short from)
                         return! follow state
                          
@@ -509,8 +515,9 @@ module Raft =
                     | ClientCommand _ | AddPeer _ | RemovePeer _ ->
                         match state.Leader with
                         | Some leader ->
-                            debug "%s follower: forwarding command: %s to %s" shortId (typeName msg) (short leader)
-                            send leader msg |> Async.Ignore |> Async.Start
+                            debug "%s follower: forwarding command: %s to %A" shortId (typeName msg) (leader)
+                            //TODO fix this
+//                            send leader msg |> Async.Ignore |> Async.Start
                             ()
                         | None -> ()
                         return! follow state
@@ -543,7 +550,7 @@ module Raft =
                         let logContext = makeContext config.LogStream
                         let termContext = new TermContext (config.TermStream)
                         let s =
-                            RaftState.create id logContext termContext
+                            RaftState.create ep logContext termContext
                             |> applyLogsFollower logger.Trigger stateApply aer.LeaderCommit  
 
                         let _ = Observable.awaitPause stateMachine.Changes 2000.0
@@ -561,7 +568,7 @@ module Raft =
                             failwith "%s pending: Not Good! - starting node with previous logs without a commit index can be fatal" shortId
                         stateMachine.Changes.Add changes.Trigger
                         started.Trigger ()
-                        return! follow (RaftState.create id logContext termContext) }
+                        return! follow (RaftState.create ep logContext termContext) }
             wait () )
 
         //let subscriber = config.Receive |> Observable.subscribe agent.Post
@@ -570,9 +577,9 @@ module Raft =
             async {
                 let! response = agent.PostAndAsyncReply (fun rc -> f, data, Some rc)
                 return (response) }
-        member this.Post cmd = agent.Post (id, cmd, None)
-        member this.AddPeer id = agent.Post (id, AddPeer id, None)        
-        member this.RemovePeer id = agent.Post (id, RemovePeer id, None)        
+        member this.Post cmd = agent.Post (ep, cmd, None)
+        member this.AddPeer ep = agent.Post (ep, AddPeer ep, None)        
+        member this.RemovePeer ep = agent.Post (ep, RemovePeer ep, None)        
 
         member this.Changes = changes.Publish
         member this.Started = started.Publish
@@ -593,5 +600,5 @@ module Raft =
         interface IDisposable with
             member this.Dispose () = 
                 //dispose subscriber
-                this.PostAndAsyncReply (Guid.NewGuid(), Exit) |> Async.RunSynchronously |> ignore
+                this.PostAndAsyncReply ((Guid.NewGuid(), "", 0), Exit) |> Async.RunSynchronously |> ignore
                 dispose agent

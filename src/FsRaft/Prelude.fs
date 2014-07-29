@@ -90,7 +90,7 @@ module Guid =
 
     let short (guid: Guid) =
         (string guid).Substring(0, 8)
-    
+
     let lower (s : string) = s.ToLower ()
 
 [<RequireQualifiedAccess>]

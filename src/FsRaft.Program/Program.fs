@@ -39,7 +39,7 @@ let makeNetwork () =
                 rc.Reply ()
             | Register (i, rpc) ->
                 return! loop <| (Map.add i (rpc) primary, secondary)
-            | Rpc (f, t, rc) ->
+            | Rpc ((f,_,_), (t,_,_), rc) ->
                 match Map.tryFind f primary, Map.tryFind t primary with
                 | Some _, Some (rpc) -> 
                     rc.Reply rpc
@@ -91,9 +91,10 @@ let apply (c : byte[]) (count, s, commands) =
     | Div n -> count + 1, s / n, c :: commands
 
 let create (network : MailboxProcessor<Network>) id = 
+    let ep = id, "", 0
     let config = 
-        { Id = id 
-          Send = call network id
+        { Id = ep
+          Send = call network ep
           Register = fun () -> ()
           LogStream = new MemoryStream()
           TermStream = new MemoryStream() }
@@ -131,7 +132,7 @@ let createPeer silent (network : MailboxProcessor<Network>) (leader : RaftAgent<
     let p, config = create network id 
     if not silent then
         p.Changes.Add(fun _ -> printf ".")
-    leader.AddPeer id
+    leader.AddPeer config.Id
     Async.AwaitEvent(p.Started) |> Async.RunSynchronously
     p, config
 

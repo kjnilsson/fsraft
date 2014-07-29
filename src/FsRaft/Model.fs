@@ -8,9 +8,9 @@ open FSharpx.Lens.Operators
 [<AutoOpen>]
 module Model =
 
-    type Endpoint = Guid
+    type Endpoint = Guid * string * int
 
-    type TermIndex = 
+    type TermIndex =
         { Term : int64
           Index : int }
 
@@ -30,7 +30,7 @@ module Model =
         | ConfigEntry of Configuration
 
     and Cluster =
-        { Peers : Map<Guid, Peer> }
+        { Peers : Map<Endpoint, Peer> }
 
     and Peer =
         { NextIndex : int
@@ -46,7 +46,7 @@ module Model =
     open FsRaft.Persistence
 
     type RaftState = 
-        { Id : Guid
+        { Id : Endpoint
           Term : TermContext
           Leader : Guid option
           Log : LogContext 
@@ -232,8 +232,8 @@ module Messages =
         | AppendEntriesResult of AppendEntriesResultData
         | RequestVoteRpc of RequestVoteRpcData 
         | VoteResult of VoteResultData
-        | AddPeer of Guid
-        | RemovePeer of Guid
+        | AddPeer of Endpoint
+        | RemovePeer of Endpoint
         | ClientCommand of byte[]
         | Ping
         | Pong
@@ -244,5 +244,5 @@ module Messages =
 module Events =
 
     type ClusterChange =
-        | Joined of Guid
-        | Left of Guid
+        | Joined of Endpoint
+        | Left of Endpoint

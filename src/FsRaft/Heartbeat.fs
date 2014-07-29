@@ -6,23 +6,24 @@ module Heartbeat =
     open FSharpx
     open Persistence
 
-    type Heartbeat (leaderId, peerId : Endpoint, send, add : Endpoint -> RaftProtocol -> unit, initial, log) =
-        do printfn "new heartbeat: %s" (short peerId)
+    type Heartbeat (leaderId, ep : Endpoint, send : Endpoint -> RaftProtocol -> Async<RaftProtocol>, add : Endpoint -> RaftProtocol -> unit, initial, log) =
+        let peerId, _, _ = ep
+        do printfn "new heartbeat: %A" (ep)
         let rpc state =
 //            printfn "rpc: do to: %s" (short peerId)
             async {
-                let v = Lenses.configPeer peerId |> Lens.get state
+                let v = Lenses.configPeer ep |> Lens.get state
                 let v = v.Value //TODO
                 assert (v.NextIndex <= state.Log.NextIndex)
                 let! reply = 
-                    send peerId <|
+                    send ep <|
                         AppendEntriesRpc
                             { Term = state.Term.Current 
                               LeaderId = leaderId
                               PrevLogTermIndex = Log.termIndex state.Log (v.NextIndex - 1)
                               Entries = Log.query state.Log (Range (v.NextIndex - 1, v.NextIndex + 4)) |> Seq.toList
                               LeaderCommit = state.CommitIndex } 
-                return add peerId reply }
+                return add ep reply }
         
         let agent = FSharp.Control.AutoCancelAgent.Start (fun inbox ->
 
@@ -37,12 +38,12 @@ module Heartbeat =
                     return! loop state }
             loop initial)
 
-        member this.State state = 
+        member __.State state = 
            agent.Post state
            state
 
         interface IDisposable with 
-            member this.Dispose () =
+            member __.Dispose () =
                 log (Debug (sprintf "raft :: %s leader: heartbeat disposing" (short peerId)))
                 dispose agent
 
@@ -51,12 +52,12 @@ module Heartbeat =
         | State of RaftState
         | Dispose of AsyncReplyChannel<unit>
 
-    type HeartbeatSuper (id, send, add, initial, log) =
-        
+    type HeartbeatSuper (ep, send, add, initial, log) =
+        let id,_,_ = ep
         let updatePeers state current =
             let peers =
                 Lenses.configPeers |> Lens.get state
-                |> Map.filter (fun k _ -> k <> id) // don't send a message to self
+                |> Map.filter (fun k _ -> k <> ep) // don't send a message to self
 
             let removed = Map.difference current peers
             removed |> Map.values |> List.iter dispose
@@ -79,7 +80,7 @@ module Heartbeat =
                 || s1.Term <> s2.Term
                 || s1.Config <> s2.Config
 
-            let rec loop state (peers : Map<Guid, Heartbeat>) = 
+            let rec loop state (peers : Map<Endpoint, Heartbeat>) = 
                 async {
                     let! msg = inbox.Receive() 
                     match msg with
@@ -94,14 +95,14 @@ module Heartbeat =
                         rc.Reply ()
                     | _ ->
                         return! loop state peers }
-            loop initial Map.empty<Guid, Heartbeat>)
+            loop initial Map.empty<Endpoint, Heartbeat>)
 
-        member this.State state = 
+        member __.State state = 
            agent.Post (State state)
            state
 
         interface IDisposable with 
-            member this.Dispose () =
+            member __.Dispose () =
                 log (Debug (sprintf "raft :: %s leader: heartbeat supervisor disposing" (short id)))
                 agent.PostAndReply (fun rc ->  Dispose rc)
                 dispose agent

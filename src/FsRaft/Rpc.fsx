@@ -5,19 +5,23 @@ open System.Net.Sockets
 
 let getBytes (s : string) = Text.Encoding.UTF8.GetBytes s
 
+type Correlation = | Correlation of byte[]
+
 let correlation () =
     let g = Guid.NewGuid()
-    (string g).Substring(0, 7) |> getBytes 
+    (string g).Substring(0, 7) 
+    |> getBytes 
+    |> Correlation
 
 // Protocol
 // [7 : correlation][1 : 0 = req, 1 = res][4 : data length][... data ...]
 
 type Frame =
-    | Request of byte[] * byte[]
-    | Response of byte[] * byte[]
+    | Request of Correlation * byte[] //correlation, data
+    | Response of Correlation * byte[] //correlation, data
 
 let writeFrame (stream: Stream) frame = 
-    let write corr ft (data : byte[]) = 
+    let write (Correlation corr) ft (data : byte[]) = 
         async { 
             do! stream.AsyncWrite corr
             do! stream.AsyncWrite [|ft|]
@@ -31,23 +35,17 @@ let writeFrame (stream: Stream) frame =
 
 let readFrame (stream : Stream) = 
     async {
-        let! corr = stream.AsyncRead 7
-        let ft = stream.ReadByte()
-        let! dl = stream.AsyncRead 4
+        let! header = stream.AsyncRead 12
+        let corr = header.[0 .. 6]
+        let ft = header.[7]
+        let dl = header.[8 .. 11]
         let dataLen = BitConverter.ToInt32(dl, 0)
         let! data = stream.AsyncRead dataLen
         match ft with
-        | 0 -> return Request (corr, data) 
-        | 1 -> return Response (corr, data)
-        | _ -> return failwith "unexpected data" }
+        | 0uy -> return Request (Correlation corr, data) 
+        | 1uy -> return Response (Correlation corr, data)
+        | _ -> return failwith "unexpected data type encountered" }
     |> Async.Catch
-
-//let ms = new MemoryStream()
-//writeFrame ms (Response ("abcdefg"B, "hello"B)) |> Async.RunSynchronously
-//ms.ToArray() |> printfn "%A"
-//ms.Position <- 0L
-//readFrame ms |> Async.RunSynchronously
-//ms.Dispose()
 
 let readIdentifier (stream : Stream) =
     async {
@@ -72,9 +70,9 @@ let writeIdentifier (ident : Identifier) (s : Stream) =
 
 
 type DuplexRpcProtocol =
-    | Send of byte[] * byte[] * AsyncReplyChannel<byte[]>
+    | Send of Correlation * byte[] * AsyncReplyChannel<byte[]>
     | Receive of Frame 
-    | Abandon of byte[]
+    | Abandon of Correlation
 
 type DuplexRpcAgent (client : TcpClient, getResponse) =
     let stream = client.GetStream()
@@ -82,15 +80,14 @@ type DuplexRpcAgent (client : TcpClient, getResponse) =
     let writer = MailboxProcessor.Start (fun inbox ->
         let rec loop state = async {
             let! ft = inbox.Receive()
-//            printfn "writer %A" ft
             let! result = writeFrame state ft
+            
             return! loop state }
         loop stream) 
 
     let responder = MailboxProcessor.Start(fun inbox ->
         let rec loop state = async {
             let! corr, data = inbox.Receive()
-//            printfn "responder %A" corr
             let! response = getResponse data
             writer.Post (Response (corr, response))
             return! loop state }
@@ -127,21 +124,21 @@ type DuplexRpcAgent (client : TcpClient, getResponse) =
             | _ -> printfn "error reading frame" }
     |> Async.Start
 
-    member this.Send data =
+    member __.Send data =
         async {
             let corr = correlation()
             let! response = agent.PostAndTryAsyncReply ((fun rc -> Send (corr, data, rc)), 200)
             match response with
-            | Some r -> return response
+            | Some _ -> return response
             | None ->
                 agent.Post (Abandon corr)
                 return response }
              
 
     interface IDisposable with
-        member this.Dispose () =
+        member __.Dispose () =
+            stream.Dispose()
             (client :> IDisposable).Dispose()
-    
     
     
 type DuplexRpcListenerProtocol =
@@ -150,7 +147,7 @@ type DuplexRpcListenerProtocol =
 
 type DuplexRpcListener (identity : Identifier, getResponse : byte [] -> Async<byte []>) =
     do printfn "identify %A" identity
-    let id, host, port = identity
+    let _, host, port = identity
     let listener = new TcpListener (IPAddress.Parse host, port)
     do listener.Start()
     do printfn "listening on %s:%i" host port
@@ -171,6 +168,7 @@ type DuplexRpcListener (identity : Identifier, getResponse : byte [] -> Async<by
                     let s = client.GetStream()
                     do! writeIdentifier identity s
                     let! r = s.AsyncRead 2
+
                     //TODO handle ident response
                     let dra = new DuplexRpcAgent(client, getResponse)
                     rc.Reply (dra.Send)
@@ -187,15 +185,16 @@ type DuplexRpcListener (identity : Identifier, getResponse : byte [] -> Async<by
             let stream = client.GetStream()
             let! ident = readIdentifier stream
             // TODO validate ident
-            do! stream.AsyncWrite "OK"B 
             match ident with
             | Choice1Of2 (ident) ->
                 agent.Post (Add (ident, client))
+                do! stream.AsyncWrite "OK"B 
             | Choice2Of2 ex ->
+                client.Close()
                 printfn "error accepting client %A" ex } 
     |> Async.Start
 
-    member this.Request (ident, data) = 
+    member __.Request (ident, data) = 
         async {
             let! f = agent.PostAndAsyncReply ((fun rc -> Get (ident, rc)), 200)
             return! f data }
@@ -212,6 +211,4 @@ let two = DuplexRpcListener(twoIdent, handle)
 one.Request (twoIdent, "hello"B) |> Async.RunSynchronously |> printfn "%A"
 
 for i in [0..1000] do
-    two.Request (oneIdent, "world"B) |> Async.RunSynchronously |> ignore //printfn "%A"
-
-for i in [0..1000] do System.Threading.Thread.Sleep 1
+    two.Request (oneIdent, "world"B) |> Async.RunSynchronously |> printfn "%A"
