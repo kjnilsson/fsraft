@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2013
-VisualStudioVersion = 12.0.30110.0
+VisualStudioVersion = 12.0.30501.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsRaft", "src\FsRaft\FsRaft.fsproj", "{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}"
 EndProject
@@ -28,6 +28,7 @@ Global
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901}.Release|Any CPU.Build.0 = Release|Any CPU
 		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution

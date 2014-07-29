@@ -5,7 +5,7 @@ open System
 open System.IO
 open NUnit.Framework
 open FsRaft
-open FsRaft.LogPersistence
+open FsRaft.Persistence
 
 type TestType =
     { Maybe : int option

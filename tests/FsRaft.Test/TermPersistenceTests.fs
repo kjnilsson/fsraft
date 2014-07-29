@@ -7,7 +7,7 @@ open System
 open System.IO
 open NUnit.Framework
 open FsRaft
-open FsRaft.TermPersistence
+open FsRaft.Persistence
 
 
 let assertEqual x y =
@@ -18,7 +18,7 @@ let assertEqual x y =
 let ``TermContext should initialise to (0, None) when no persistent data available`` () =
     use stream = new MemoryStream()
 
-    let context = TermContext stream
+    use context = new TermContext(stream)
     assertEqual 0L context.Current
     assertEqual None context.VotedFor
 
@@ -26,11 +26,11 @@ let ``TermContext should initialise to (0, None) when no persistent data availab
 let ``TermContext should initialise previously written values`` () =
     use stream = new MemoryStream()
     let votedFor = Guid.NewGuid()
-    let context = TermContext stream
+    use context = new TermContext(stream)
     context.Current <- 1L
     context.VotedFor <- Some votedFor
 
-    let result = TermContext stream
+    use result = new TermContext(stream)
 
     assertEqual 1L result.Current
     assertEqual (Some votedFor) result.VotedFor
@@ -39,7 +39,7 @@ let ``TermContext should initialise previously written values`` () =
 let ``TermContext should reset votedFor when term is incremented`` () =
     use stream = new MemoryStream()
     let votedFor = Guid.NewGuid()
-    let context = TermContext stream
+    use context = new TermContext(stream)
     context.Current <- 1L
     context.VotedFor <- Some votedFor
     
@@ -55,7 +55,7 @@ let ``TermContext should reset votedFor when term is incremented`` () =
 let ``TermContext should not reset voted when term is set to curren value`` () =
     use stream = new MemoryStream()
     let votedFor = Guid.NewGuid()
-    let context = TermContext stream
+    use context = new TermContext(stream)
     context.Current <- 1L
     context.VotedFor <- Some votedFor
     
