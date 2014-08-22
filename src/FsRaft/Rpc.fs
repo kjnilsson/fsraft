@@ -111,9 +111,10 @@ type DuplexRpcAgent (ident, client : TcpClient, getResponse) =
                     rc.Reply data
                     return! loop (Map.remove corr state) 
                 | None ->
-                    printfn "unmatched response"
+                    printfn "unmatched response %A" corr
                     return! loop state 
              | Abandon corr ->
+                printfn "abandoning.. %A" corr
                 return! loop (Map.remove corr state) }
         loop Map.empty)
 
@@ -200,17 +201,3 @@ type DuplexRpcListener (identity : Identifier, getResponse : Identifier -> byte 
         async {
             let! f = agent.PostAndAsyncReply ((fun rc -> Get (ident, rc)))
             return! f data }
-            
-//let handle (b:byte[]) =
-//    async { return Array.rev b }
-//
-//let oneIdent = (Guid.NewGuid(), "127.0.0.1", 1234)
-//let one = DuplexRpcListener(oneIdent, handle)
-//let twoIdent = (Guid.NewGuid(), "127.0.0.1", 4321)
-//let two = DuplexRpcListener(twoIdent, handle)
-//
-//
-//one.Request (twoIdent, "hello"B) |> Async.RunSynchronously |> printfn "%A"
-//
-//for i in [0..1000] do
-//    two.Request (oneIdent, "world"B) |> Async.RunSynchronously |> printfn "%A"

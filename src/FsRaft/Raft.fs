@@ -351,25 +351,6 @@ module Raft =
                 let peers = Lenses.configPeers |> Lens.get state
                 let peersExcept = peers |> Map.filter (fun k _ -> k <> state.Id)
 
-                // pinging at least one other node to ensure liveliness
-                // slow running nodes should not initiate unnecessary elections
-//                if peersExcept.Count > 0 then
-//                    debug "%s candidate: pinging other nodes" shortId
-//                    peersExcept
-//                    |> Map.map (fun _ _ -> Ping)
-//                    |> Map.iter send 
-//
-//                    let! pong = tryReceive 2000
-//                    match pong with
-//                    | Some (f, o) -> 
-//                        match o with
-//                        | Pong -> 
-//                            debug "%s candidate: Pong received - proceeding with election..." shortId
-//                        | _ -> 
-//                            inbox.Post (f, o) // return message to queue in case it is a vote request
-//                            return! follow state 
-//                    | _ -> return! follow state
-
                 let stateId, _, _ = state.Id
 
                 let nextTerm = state.Term.Current + 1L

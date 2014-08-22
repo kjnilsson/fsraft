@@ -1,8 +1,20 @@
-﻿// Learn more about F# at http://fsharp.net. See the 'F# Tutorial' project
-// for more guidance on F# programming.
+﻿
+type Machine =
+    { Roles : string seq }
 
-#load "Library1.fs"
-open Zorrillo.Platform.Raft.Test
+type Env =
+    { Machines : Machine seq }
 
-// Define your library scripting code here
 
+let envs = [{ Machines = [{ Roles = ["blah"; "bleh"] }; {Roles = ["yah"; "blah"] }] }]
+envs
+|> Seq.collect (fun x -> x.Machines) 
+|> Seq.collect (fun x -> x.Roles) 
+|> Seq.filter ((<>) "none")
+|> Set.ofSeq
+|> String.concat " "
+
+[1;2]
+|> Seq.filter ((<>) 1)
+
+String.concat " "
