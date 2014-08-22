@@ -1,17 +1,17 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
+# Visual Studio 2012
 VisualStudioVersion = 12.0.30501.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsRaft", "src\FsRaft\FsRaft.fsproj", "{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsRaft.Program", "src\FsRaft.Program\FsRaft.Program.fsproj", "{A472FA41-19BD-4E9F-B8DA-80A133C6C901}"
-EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsRaft.Test", "tests\FsRaft.Test\FsRaft.Test.fsproj", "{5FF5122D-A693-4B90-A374-A1462D0AAD1E}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{1B08B7BE-20F1-430D-92A4-B9284A2BDB24}"
 EndProject
+Project("{f2a71f9b-5d33-465a-a702-920d77279786}") = "FsRaft", "src\FsRaft\FsRaft.fsproj", "{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}"
+EndProject
+Project("{f2a71f9b-5d33-465a-a702-920d77279786}") = "FsRaft.Program", "src\FsRaft.Program\FsRaft.Program.fsproj", "{A472FA41-19BD-4E9F-B8DA-80A133C6C901}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{674928D0-AA36-4636-A669-DC3DEE8A1F2F}"
+EndProject
+Project("{f2a71f9b-5d33-465a-a702-920d77279786}") = "FsRaft.Test", "tests\FsRaft.Test\FsRaft.Test.fsproj", "{5FF5122D-A693-4B90-A374-A1462D0AAD1E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,24 +19,27 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5FF5122D-A693-4B90-A374-A1462D0AAD1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
+		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{B3F886F3-0584-4CC5-B2A6-482BA30C92CD} = {1B08B7BE-20F1-430D-92A4-B9284A2BDB24}
 		{A472FA41-19BD-4E9F-B8DA-80A133C6C901} = {1B08B7BE-20F1-430D-92A4-B9284A2BDB24}
 		{5FF5122D-A693-4B90-A374-A1462D0AAD1E} = {674928D0-AA36-4636-A669-DC3DEE8A1F2F}
+	EndGlobalSection
+	GlobalSection(MonoDevelopProperties) = preSolution
+		StartupItem = src\FsRaft.Program\FsRaft.Program.fsproj
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal

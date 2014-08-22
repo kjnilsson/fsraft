@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>5FF5122D-A693-4B90-A374-A1462D0AAD1E</ProjectGuid>
+    <ProjectGuid>{5FF5122D-A693-4B90-A374-A1462D0AAD1E}</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>Zorrillo.Platform.Raft.Test</RootNamespace>
     <AssemblyName>FsRaft.Test</AssemblyName>
@@ -32,9 +32,6 @@
     <DocumentationFile>bin\Release\Zorrillo.Platform.Raft.Test.XML</DocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="FSharp.Core, Version=$(TargetFSharpCoreVersion), Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-      <Private>True</Private>
-    </Reference>
     <Reference Include="mscorlib" />
     <Reference Include="nunit.framework">
       <HintPath>..\..\packages\NUnit.2.6.3\lib\nunit.framework.dll</HintPath>
@@ -42,6 +39,9 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Numerics" />
+    <Reference Include="FSharp.Core">
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="RaftTests.fs" />
@@ -54,8 +54,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FsRaft\FsRaft.fsproj">
       <Name>FsRaft</Name>
-      <Project>{b3f886f3-0584-4cc5-b2a6-482ba30c92cd}</Project>
-      <Private>True</Private>
+      <Project>{B3F886F3-0584-4CC5-B2A6-482BA30C92CD}</Project>
     </ProjectReference>
   </ItemGroup>
   <PropertyGroup>

@@ -108,7 +108,7 @@ let create (network : MailboxProcessor<Network>) id port =
             let! result = agent.PostAndAsyncReply  (f, deserialize data)
             return serialize result }
 //    network.Post (Register (id, rpc))
-//    agent.LogEntry.Add (printfn "%A")
+    agent.LogEntry.Add (printfn "%A")
     agent, config
     
 //let consoleLogger (entry : Entries.Entry) =
@@ -190,7 +190,7 @@ let basic silent =
         let leaderId = Guid.NewGuid()
 //        let send = send network
         let leader, leaderConfig = makeLeader leaderId network 1236
-        let peers = leader :: ([0..6] |> List.map (fun p -> fst <| createPeer silent network leader (4321 + p)))
+        let peers = leader :: ([0..3] |> List.map (fun p -> fst <| createPeer silent network leader (4321 + p)))
         for x = 0 to 100 do
             do! Async.Sleep 50
             if not silent then printf "*"

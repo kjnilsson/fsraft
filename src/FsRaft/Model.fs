@@ -48,7 +48,7 @@ module Model =
     type RaftState = 
         { Id : Endpoint
           Term : TermContext
-          Leader : Guid option
+          Leader : Endpoint option
           Log : LogContext 
           CommitIndex : int
           Config : Configuration }
@@ -208,7 +208,7 @@ module Messages =
 
     type AppendEntriesRpcData = 
         { Term : int64
-          LeaderId : Guid
+          LeaderId : Endpoint
           PrevLogTermIndex : TermIndex
           Entries : Entry list
           LeaderCommit : int }
@@ -240,12 +240,6 @@ module Messages =
         | RpcFail
         | Exit  
 
-        static member parse (o : obj) =
-            match o with
-            | :? AppendEntriesRpcData as i -> AppendEntriesRpc i 
-            | :? AppendEntriesResultData as i -> AppendEntriesResult i 
-            | :? RequestVoteRpcData as i -> RequestVoteRpc i 
-            | :? VoteResultData as i -> VoteResult i 
 
 [<AutoOpen>]
 module Events =
