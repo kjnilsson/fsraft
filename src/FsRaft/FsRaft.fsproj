@@ -61,6 +61,7 @@
     <None Include="Performance.fsx" />
     <None Include="Rpc.fsx" />
     <None Include="Heartbeat.fsx" />
+    <None Include="log2.fsx" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FSharp.Core, Version=$(TargetFSharpCoreVersion), Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">

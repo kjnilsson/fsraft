@@ -205,8 +205,8 @@ let basic silent =
 //    async {
 //        let network = makeNetwork()
 //        let leaderId = Guid.NewGuid()
-//        let leader,_ = makeLeader leaderId network
-//        let peers = leader :: ([0..2] |> List.map (fun _ -> fst <| createPeer silent network leader))
+//        let leader,_ = makeLeader leaderId network 1237
+//        let peers = leader :: ([0..2] |> List.map (fun p -> fst <| createPeer silent network leader (4330 + p)))
 //        for x = 0 to 250 do
 //            if x = 50 then network.Post Isolate
 //            if x = 65 then network.Post (IsolateX leaderId)
@@ -273,8 +273,7 @@ let basic silent =
 let main argv = 
     let silent = true
     Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
-//    Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
-//    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
+//    Async.RunSynchronously (isolateSome silent) |> printfn "isolateSome is: %A"
 //    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
     Console.ReadLine () |> ignore
     0

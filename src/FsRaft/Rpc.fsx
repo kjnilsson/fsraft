@@ -1,7 +1,9 @@
 ﻿#load "Rpc.fs"
 open System
 open FsRaft.Rpc
-            
+
+let (Correlation c) = correlation()
+decode (Array.rev c            )
 let handle (b:byte[]) =
     async { return Array.rev b }
 

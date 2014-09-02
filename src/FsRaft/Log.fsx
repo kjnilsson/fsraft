@@ -1,34 +1,20 @@
 ﻿#r "bin/Debug/FSharpx.Core.dll"
 #r "bin/Debug/FsPickler.dll"
-#r "bin/Debug/Zorrillo.Shared.Logging.dll"
-#r "../Zorrillo.Platform.Core/bin/Debug/Zorrillo.Platform.Common.dll"
-#r "../Zorrillo.Platform.Core/bin/Debug/Zorrillo.Platform.Core.dll"
 
 #load "Prelude.fs"
 #load "Persistence.fs"
-open Zorrillo.Platform.Raft
 #load "Model.fs"
-open Zorrillo.Platform.Raft
+#load "Heartbeat.fs"
+#load "Rpc.fs"
 #load "Raft.fs"
 
 open System
-open System.IO
-open FsPickler
-open Zorrillo.Platform.Raft.LogPersistence
 
 
+open FsRaft.Persistence
 #time
-open Zorrillo.Platform.Raft
-open Zorrillo.Platform.Raft.LogPersistence
-
 let file = new IO.FileStream(@"C:\dump\raftperf\169\e32b8a84-ebde-4803-a7d8-e4917517a28b\log.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
 let termFile = new IO.FileStream(@"C:\dump\raftperf\169\e32b8a84-ebde-4803-a7d8-e4917517a28b\term.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
-//let file = new IO.FileStream(@"C:\dump\raftperf\147\bf37efeb-17f7-4988-8ea2-6a90276c3167\log.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
-//let termFile = new IO.FileStream(@"C:\dump\raftperf\147\bf37efeb-17f7-4988-8ea2-6a90276c3167\term.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
-//let file = new IO.FileStream(@"C:\dump\raftperf\189\063d81f7-6f6b-4e79-8459-16e8f990e17b\log.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
-//let termFile = new IO.FileStream(@"C:\dump\raftperf\189\063d81f7-6f6b-4e79-8459-16e8f990e17b\term.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
-//let file = new IO.FileStream(@"C:\dump\raftperf\39\ae91189d-0fc8-4515-b303-db8dcbe3f61d\log.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
-//let termFile = new IO.FileStream(@"C:\dump\raftperf\39\ae91189d-0fc8-4515-b303-db8dcbe3f61d\term.dat", IO.FileMode.OpenOrCreate,IO.FileAccess.ReadWrite)
 let context = makeContext file
 let termContext = TermPersistence.TermContext (termFile)
 context

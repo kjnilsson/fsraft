@@ -57,7 +57,6 @@ module Prelude =
 [<RequireQualifiedAccess>]
 module Observable =
     open System.Threading
-    open System.Timers
 
     let awaitPause event timeOut =
         let are = ref (new AutoResetEvent false)

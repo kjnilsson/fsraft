@@ -3,7 +3,6 @@
 open System
 open FSharpx
 open FSharpx.State
-open FSharpx.Lens.Operators
 
 [<AutoOpen>]
 module Model =
@@ -239,13 +238,6 @@ module Messages =
         | Pong
         | RpcFail
         | Exit  
-
-        static member parse (o : obj) =
-            match o with
-            | :? AppendEntriesRpcData as i -> AppendEntriesRpc i 
-            | :? AppendEntriesResultData as i -> AppendEntriesResult i 
-            | :? RequestVoteRpcData as i -> RequestVoteRpc i 
-            | :? VoteResultData as i -> VoteResult i 
 
 [<AutoOpen>]
 module Events =

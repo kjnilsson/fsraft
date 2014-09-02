@@ -5,14 +5,18 @@ open System.IO
 open System.Net
 open System.Net.Sockets
 
-let getBytes (s : string) = Text.Encoding.UTF8.GetBytes s
+let encode (s : string) = Text.Encoding.UTF8.GetBytes s
+let decode (b : byte []) = Text.Encoding.UTF8.GetString b
 
 type Correlation = | Correlation of byte[]
+
+let decodeCorr (Correlation c) =
+    decode c
 
 let correlation () =
     let g = Guid.NewGuid()
     (string g).Substring(0, 7) 
-    |> getBytes 
+    |> encode 
     |> Correlation
 
 // Protocol
@@ -55,7 +59,7 @@ let readIdentifier (stream : Stream) =
         let len = BitConverter.ToInt32 (lenBuf, 0)
         let! identData = stream.AsyncRead len
         let i = Text.Encoding.UTF8.GetString identData
-        printfn "identifier string: %s" i
+//        printfn "identifier string: %s" i
         match i.Split([|'@';':'|]) with
         | [|g;h;p|] -> return (Guid g), h, Int32.Parse p
         | _ -> return failwith "invalid identifier" }
@@ -68,7 +72,7 @@ let writeIdentifier (ident : Identifier) (s : Stream) =
         let i, h, p = ident
         let me = sprintf "%O@%s:%i" i h p 
         do! s.AsyncWrite (BitConverter.GetBytes me.Length)
-        do! s.AsyncWrite (me |> getBytes)   }
+        do! s.AsyncWrite (me |> encode)   }
 
 
 type DuplexRpcProtocol =
@@ -111,10 +115,10 @@ type DuplexRpcAgent (ident, client : TcpClient, getResponse) =
                     rc.Reply data
                     return! loop (Map.remove corr state) 
                 | None ->
-                    printfn "unmatched response %A" corr
+                    printfn "unmatched response %s" (decodeCorr corr)
                     return! loop state 
              | Abandon corr ->
-                printfn "abandoning.. %A" corr
+                printfn "abandoning.. %s" (decodeCorr corr)
                 return! loop (Map.remove corr state) }
         loop Map.empty)
 
@@ -184,7 +188,7 @@ type DuplexRpcListener (identity : Identifier, getResponse : Identifier -> byte 
     do async {
         while true do
             let! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
-            printfn "new client connection"
+            printfn "new client connection from %A"  client.Client.RemoteEndPoint
             let stream = client.GetStream()
             let! ident = readIdentifier stream
             // TODO validate ident

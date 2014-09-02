@@ -29,7 +29,7 @@ module Persistence =
                         match msg with
                         | Write (rc, data) ->
                             state.Position <- 0L
-                            let data = pickler.Serialize (state, data)
+                            pickler.Serialize (state, data)
                             state.Flush()
                             rc.Reply()
                             return! loop state
@@ -43,24 +43,24 @@ module Persistence =
                 cache <- Option.getOrElse (0L, None) storedValue 
                 agent.Error.Add raise // break all the things
 
-            member this.Current 
+            member __.Current 
                 with get () = fst cache
                 and set (t : int64) =
                     if t > fst cache then 
                         agent.PostAndReply (fun rc -> Write (rc, (t, None)))
                         cache <- t, None // race condition
 
-            member this.VotedFor 
+            member __.VotedFor 
                 with get() = snd cache
                 and set votedFor =
                     if snd cache = None then
                         agent.PostAndReply (fun rc ->  Write (rc, (fst cache, votedFor)))
                         cache <- fst cache, votedFor
 
-            member this.Error = agent.Error
+            member __.Error = agent.Error
 
             interface IDisposable with
-                member this.Dispose () =
+                member __.Dispose () =
                     agent.PostAndReply(fun rc -> Exit rc)
                     dispose agent
 
@@ -79,6 +79,12 @@ module Persistence =
 
         type LogAgent = MailboxProcessor<LogProtocol>
 
+        type Snapshot<'TState> =
+            { Term : int64
+              Index : int
+              State : 'TState
+              File : string }
+              
         type LogContext =
             { Index : Map<int, int64 * int64> //log index, term, offset
               Agent : LogAgent
@@ -112,11 +118,11 @@ module Persistence =
                     |> truncateHigher idx context.NextIndex // remove higher indexes as these should be considered stale
                 NextIndex = idx + 1 }
 
-        let private readRecord { Agent = agent } pos read : Record =
+        let private readRecord { Agent = agent } pos : Record =
             agent.PostAndReply((fun rc -> Read (rc, pos)), 2000)
 
-        let private tryReadRecord context pos read =
-            Option.protect (fun () -> readRecord context pos read)
+        let private tryReadRecord context pos =
+            Option.protect (fun () -> readRecord context pos)
 
         let private readIndex (s : Stream) =
             s.Position <- 0L
@@ -134,7 +140,7 @@ module Persistence =
         let tryGet (context : LogContext) index =
             match Map.tryFind index context.Index with
             | Some (_, offset) ->
-                tryReadRecord context offset read 
+                tryReadRecord context offset 
             | None -> None
 
         type Query =
@@ -146,7 +152,7 @@ module Persistence =
             let read =
                 Seq.sort
                 >> Seq.map(fun (idx, (_, offs)) ->
-                    readRecord context offs read)
+                    readRecord context offs)
             let index = context.Index
             function
             | All -> 
@@ -179,7 +185,7 @@ module Persistence =
         let makeContext stream =
             let index, last = readIndex stream
             let agent = MailboxProcessor.Start (fun inbox ->
-                let rec loop (stream:Stream) = async {
+                let rec loop (stream: Stream) = async {
                     let! msg = inbox.Receive ()
                     match msg with
                     | Write (rc, r) ->
