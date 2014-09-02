@@ -67,7 +67,7 @@ module Heartbeat =
             let added = 
                 Map.difference peers current'
                 |> Map.map (fun k v -> 
-                    new Heartbeat(id, k, send, add, state, log)) 
+                    new Heartbeat(ep, k, send, add, state, log)) 
             
             Map.merge added current'
 

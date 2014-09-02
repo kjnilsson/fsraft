@@ -509,9 +509,7 @@ module Raft =
                         match state.Leader with
                         | Some leader ->
                             debug "%s follower: forwarding command: %s to %A" shortId (typeName msg) (leader)
-                            //TODO fix this
-//                            send leader msg |> Async.Ignore |> Async.Start
-                            ()
+                            send leader msg |> Async.Ignore |> Async.Start
                         | None -> ()
                         return! follow state
 
@@ -576,7 +574,7 @@ module Raft =
 
         member this.Changes = changes.Publish
         member this.Started = started.Publish
-        member this.QueueLength = queueLen.Publish
+
         member this.ClusterChanges = clusterChanges.Publish
 
         member this.LogEntry = logger.Publish

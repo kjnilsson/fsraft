@@ -47,7 +47,7 @@ module Model =
     type RaftState = 
         { Id : Endpoint
           Term : TermContext
-          Leader : Guid option
+          Leader : Endpoint option
           Log : LogContext 
           CommitIndex : int
           Config : Configuration }
@@ -207,7 +207,7 @@ module Messages =
 
     type AppendEntriesRpcData = 
         { Term : int64
-          LeaderId : Guid
+          LeaderId : Endpoint
           PrevLogTermIndex : TermIndex
           Entries : Entry list
           LeaderCommit : int }
