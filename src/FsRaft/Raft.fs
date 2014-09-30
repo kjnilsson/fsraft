@@ -31,8 +31,7 @@ module Raft =
         pickler.Serialize (s, x)
         s.ToArray()
 
-    let shortEp (id, _, _) =
-        short id
+    let shortEp (id, _, _) = short id
 
     let random = Random ()
 

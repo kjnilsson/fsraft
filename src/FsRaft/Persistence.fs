@@ -84,7 +84,6 @@ module Persistence =
 //              Index : int
 //              State : 'TState
 //              File : string }
-//              
         type LogContext =
             { Index : Map<int, int64 * int64> //log index, term, offset
               Agent : LogAgent

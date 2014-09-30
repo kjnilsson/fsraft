@@ -10,7 +10,6 @@ module Heartbeat =
         let peerId, _, _ = ep
         do printfn "new heartbeat: %A" (ep)
         let rpc state =
-//            printfn "rpc: do to: %s" (short peerId)
             async {
                 let v = Lenses.configPeer ep |> Lens.get state
                 let v = v.Value //TODO

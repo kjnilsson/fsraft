@@ -86,7 +86,7 @@ type DuplexRpcAgent (ident, client : TcpClient, getResponse) =
     let writer = MailboxProcessor.Start (fun inbox ->
         let rec loop state = async {
             let! ft = inbox.Receive()
-            let! result = writeFrame state ft
+            let! _ = writeFrame state ft
             
             return! loop state }
         loop stream) 

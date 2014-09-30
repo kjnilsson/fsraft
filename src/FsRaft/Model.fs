@@ -63,6 +63,7 @@ module Model =
                 dispose x.Log
                 dispose x.Term
 
+
 module Log =
     open FsRaft.Persistence
 

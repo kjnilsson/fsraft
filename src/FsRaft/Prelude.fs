@@ -22,6 +22,7 @@ module Logging =
 
 module RaftConstants = 
 
+
     [<Literal>]
     let heartbeat = 250
     #if DEBUG
