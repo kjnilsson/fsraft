@@ -78,13 +78,13 @@ module Persistence =
             | Exit of AsyncReplyChannel<unit>
 
         type LogAgent = MailboxProcessor<LogProtocol>
-
-        type Snapshot<'TState> =
-            { Term : int64
-              Index : int
-              State : 'TState
-              File : string }
-              
+//
+//        type Snapshot<'TState> =
+//            { Term : int64
+//              Index : int
+//              State : 'TState
+//              File : string }
+//              
         type LogContext =
             { Index : Map<int, int64 * int64> //log index, term, offset
               Agent : LogAgent
