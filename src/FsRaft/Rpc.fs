@@ -4,6 +4,7 @@ open System
 open System.IO
 open System.Net
 open System.Net.Sockets
+open System.Threading
 
 let encode (s : string) = Text.Encoding.UTF8.GetBytes s
 let decode (b : byte []) = Text.Encoding.UTF8.GetString b
@@ -80,7 +81,7 @@ type DuplexRpcProtocol =
     | Receive of Frame 
     | Abandon of Correlation
 
-type DuplexRpcAgent (ident, client : TcpClient, getResponse) =
+type DuplexRpcAgent (ident, client : TcpClient, getResponse, error) =
     let stream = client.GetStream()
 
     let writer = MailboxProcessor.Start (fun inbox ->
@@ -118,18 +119,24 @@ type DuplexRpcAgent (ident, client : TcpClient, getResponse) =
                     printfn "unmatched response %s" (decodeCorr corr)
                     return! loop state 
              | Abandon corr ->
-                printfn "abandoning.. %s" (decodeCorr corr)
+                printfn "abandoning.. %A %s" ident (decodeCorr corr)
                 return! loop (Map.remove corr state) }
         loop Map.empty)
 
-    do async {
-        while true do
-            let! frame = readFrame stream
-            match frame with
-            | Choice1Of2 (f) ->
-                agent.Post (Receive f)
-            | _ -> printfn "error reading frame" }
-    |> Async.Start
+    let token = new CancellationTokenSource()
+    do 
+        async {
+            let! t = Async.CancellationToken
+            while not t.IsCancellationRequested do
+                let! frame = readFrame stream
+                match frame with
+                | Choice1Of2 (f) ->
+                    agent.Post (Receive f)
+                | Choice2Of2 ex -> 
+                    token.Cancel()
+                    error()
+                    printfn "%A error reading frame %A" ident ex }
+        |> fun t -> Async.Start(t, token.Token)
 
     member __.Send data =
         async {
@@ -141,18 +148,22 @@ type DuplexRpcAgent (ident, client : TcpClient, getResponse) =
                 agent.Post (Abandon corr)
                 return response }
              
-
     interface IDisposable with
         member __.Dispose () =
-            stream.Dispose()
-            (client :> IDisposable).Dispose()
-    
+            try
+                token.Cancel()
+                dispose token
+                stream.Dispose()
+                (client :> IDisposable).Dispose()
+            with | _ -> ()
     
 type DuplexRpcListenerProtocol =
     | Get of Identifier * AsyncReplyChannel<byte[] -> Async<byte[] option>>
     | Add of Identifier * TcpClient
+    | Remove of Identifier
+    | Exit of AsyncReplyChannel<unit>
 
-type DuplexRpcListener (identity : Identifier, getResponse : Identifier -> byte [] -> Async<byte []>) =
+type DuplexRpcTcpListener (identity : Identifier, getResponse : Identifier -> byte [] -> Async<byte []>) =
     do printfn "identify %A" identity
     let _, host, port = identity
     let listener = new TcpListener (IPAddress.Parse host, port)
@@ -171,19 +182,36 @@ type DuplexRpcListener (identity : Identifier, getResponse : Identifier -> byte 
                 | None ->
                     printfn "no current connection - connection to: %A" ident
                     let _, h, p = ident
-                    let client = new TcpClient (h, p)
-                    let s = client.GetStream()
-                    do! writeIdentifier identity s
-                    let! r = s.AsyncRead 2
-
-                    //TODO handle ident response
-                    let dra = new DuplexRpcAgent(ident, client, getResponse)
-                    rc.Reply (dra.Send)
-                    return! loop (Map.add ident dra state) 
-             | Add (ident, client) -> 
-                let dra = new DuplexRpcAgent(ident, client, getResponse)
-                return! loop (Map.add ident dra state) }
+                    async {
+                        try
+                            let client = new TcpClient (h, p)
+                            let s = client.GetStream()
+                            do! writeIdentifier identity s
+                            let! _ = s.AsyncRead 2
+                            //TODO handle ident response
+                            inbox.Post (Add(ident, client)) 
+                            inbox.Post msg
+                        with
+                        | ex -> 
+                            printfn "failed to connect to %A with %s" ident ex.Message
+                            rc.Reply (fun _ -> async { return None }) }
+                    |> Async.Start // need to process on background thread
+                    return! loop state 
+            | Add (ident, client) -> 
+                let error = fun () -> inbox.Post (Remove ident)
+                let dra = new DuplexRpcAgent(ident, client, getResponse, error)
+                return! loop (Map.add ident dra state)
+            | Remove ident ->
+                let dra = Map.tryFind ident state
+                dispose dra
+                return! loop (Map.remove ident state)
+            | Exit rc ->
+                printfn "exiting TcpListener %A" identity
+                Map.iter (fun _ v -> dispose v) state
+                rc.Reply () }
+                
         loop Map.empty)
+    do agent.Error.Add raise
                 
     do async {
         while true do
@@ -205,3 +233,12 @@ type DuplexRpcListener (identity : Identifier, getResponse : Identifier -> byte 
         async {
             let! f = agent.PostAndAsyncReply ((fun rc -> Get (ident, rc)))
             return! f data }
+
+    interface IDisposable with
+        member __.Dispose() =
+            try
+                agent.PostAndReply (Exit, 1000)
+                listener.Stop()
+                dispose agent
+            with | _ -> ()
+   

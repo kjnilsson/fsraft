@@ -2,6 +2,7 @@
 // This block of code is omitted in the generated HTML documentation. Use 
 // it to define helpers that you do not want to show in the documentation.
 #I "../../bin"
+#r "../../bin/FsRaft.dll"
 
 (**
 F# Project Scaffold
@@ -26,11 +27,68 @@ Example
 This example demonstrates using a function defined in this sample library.
 
 *)
-#r "FSharp.ProjectTemplate.dll"
-open FSharp.ProjectTemplate
+open FsRaft
+open System.IO
+open System
 
-printfn "hello = %i" <| Library.hello 0
 
+//the apply function that applies a command to the state and returns the new state
+let apply b state =
+    (BitConverter.ToInt32(b, 0) + state)
+    
+let makeEndpoint (g: Guid) port =
+    g, "127.0.0.1", port
+
+let makeConfig endpoint =
+    { Id = endpoint
+      Send = fun x y -> async { return y }
+      Register = id
+      LogStream = new MemoryStream()
+      TermStream = new MemoryStream() }
+
+let makeNode endpoint config =
+    let fsraft = new RaftAgent<int>(config, 0, apply)
+    fsraft.Changes.Add (fun (_,_,state) -> printfn "%A Changed to: %A" endpoint state)
+//    fsraft.LogEntry.Add (printfn "%A")
+    fsraft.Error.Add (printfn "error %A")
+    fsraft, endpoint, config
+
+let make port =
+    let endpoint = makeEndpoint (guid()) port
+    let config = makeConfig endpoint
+    makeNode endpoint config
+
+let node1, ep1, config1 = make 3001
+let node2, ep2, config2 = make 3002
+let node3, ep3, config3 = make 3003
+
+node1.Post (BitConverter.GetBytes 1)
+//wait a few seconds here
+node1.AddPeer ep2
+node1.AddPeer ep3
+
+//give it a few seconds
+
+
+//add 1 to the intial state - run this a few times
+//you should get output from all the nodes
+node1.Post (BitConverter.GetBytes 1)
+
+//shut down node1 (most likely the current leader node)
+dispose node1
+// give it a few seconds
+
+
+//post another message to one of the surviving nodes
+node3.Post (BitConverter.GetBytes 1)
+node2.Post (BitConverter.GetBytes 1)
+
+//revive node1
+let node1' = makeNode ep1 (makeConfig ep1)
+
+
+let n, _ , _ = node1'
+n.Post (BitConverter.GetBytes 1)
 (**
 Some more info
 

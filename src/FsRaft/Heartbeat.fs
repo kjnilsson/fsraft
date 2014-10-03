@@ -37,6 +37,8 @@ module Heartbeat =
                     return! loop state }
             loop initial)
 
+        do agent.Error.Add raise
+
         member __.State state = 
            agent.Post state
            state

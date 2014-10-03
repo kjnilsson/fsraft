@@ -12,6 +12,7 @@ module Raft =
 
     open Messages
     open Persistence
+    open Microsoft.FSharp.Reflection
 
     type RaftConfig =
         { Id : Endpoint
@@ -34,6 +35,10 @@ module Raft =
     let shortEp (id, _, _) = short id
 
     let random = Random ()
+
+    let inline typeName (x : RaftProtocol) = 
+        match FSharpValue.GetUnionFields(x, typeof<RaftProtocol>) with
+        | case, _ -> case.Name
 
     let electionTimout () = random.Next (RaftConstants.electionTimeoutFrom, RaftConstants.electionTimeoutTo)
 
@@ -157,6 +162,7 @@ module Raft =
         | Restore of 'TState
         | Get of AsyncReplyChannel<'TState>
 
+    // TODO: not sure state changes should be processed asyncronously
     type internal StateMachine<'TState when 'TState : equality> (apply, initialState) =
         let changed = Event<byte[] * bool * 'TState> ()
         let agent = MailboxProcessor.Start (fun inbox ->
@@ -174,10 +180,10 @@ module Raft =
                     return! loop state }
             loop initialState)
         do agent.Error.Add raise
-        member this.Post = agent.Post
-        member this.Get () = 
+        member __.Post = agent.Post
+        member __.Get () = 
             agent.PostAndReply (fun rc -> Get rc)
-        member this.Changes = changed.Publish
+        member __.Changes = changed.Publish
 
 
     type RaftAgent<'TState when 'TState : equality> (config : RaftConfig, initialState, apply) =
@@ -185,7 +191,7 @@ module Raft =
         let ep = config.Id
         let shortId = (short id)
         // logging
-        let logger = Event<RaftLogEntry>()
+        let logger = Event<RaftLogEntry>() // TODO replace with a logger that isn't synchronous
         let debug msg = debug "raft" logger msg
         let warn msg = warn "raft" logger msg
 
@@ -216,31 +222,40 @@ module Raft =
             state.Term.VotedFor <- Some votedFor
             state
 
-        let queueLen = Event<int>()
+        let mutable requestorObj = null 
+
+        // TODO move this to configuration
+        let rpcFactory processMsg = 
+            let r = new Rpc.DuplexRpcTcpListener(ep, processMsg) 
+            (fun x y -> r.Request(x, y)), r :> IDisposable
+        
         let agent = MailboxProcessor<Endpoint * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
 
-            let rpcAgent = Rpc.DuplexRpcListener(config.Id, fun ident data -> 
+            let processMsg ident data =
                 async {
                     let p = deserialize data
-                    let p = p
-                    let! result = inbox.PostAndAsyncReply  (fun rc -> ident, p, Some rc)
-                    return serialize (result) })
+                    let! result = inbox.PostAndTryAsyncReply  ((fun rc -> ident, p, Some rc), 500)
+                    return 
+                        match result with
+                        | None -> RpcFail
+                        | Some p -> p
+                        |> serialize }
+
+            let request, requestor = rpcFactory processMsg 
+            requestorObj <- requestor
 
             let send peer (msg : RaftProtocol) = 
                 async {
                     let m = serialize msg
-                    let m = m
-                    let! response = rpcAgent.Request(peer, m)
+                    let! response = request peer m
                     match response with
                     | Some res -> return deserialize res
                     | None -> return RpcFail }
 
             let receive () = 
-                queueLen.Trigger inbox.CurrentQueueLength
                 inbox.Receive ()
 
             let tryReceive t =
-                queueLen.Trigger inbox.CurrentQueueLength
                 inbox.TryReceive t
         
             let rec lead state = async {
@@ -296,7 +311,7 @@ module Raft =
                         return! inner (update state)
 
                     | AppendEntriesResult res when res.Success ->
-                        debug "%s leader: append entries success from %s" shortId (short from)
+//                        debug "%s leader: append entries success from %s" shortId (short from)
                         assert (res.LastEntryTermIndex.Index < state.Log.NextIndex)
 
                         // TODO: need to review and test this logic more
@@ -338,6 +353,9 @@ module Raft =
                         let e = 
                             { TermIndex = TermIndex.create state.Term.Current (state.Log.NextIndex)
                               Content = Command cmd }
+                        match rc with
+                        | Some rc -> rc.Reply Pong
+                        | None -> ()
                         return! inner (Log.incrementState e state)
 
                     | _ ->
@@ -355,7 +373,7 @@ module Raft =
                 let nextTerm = state.Term.Current + 1L
                 let state = setTermVotedFor { state with Leader = None } nextTerm stateId
                 warn "%s candidate: initiating election for term: %i" shortId state.Term.Current
-
+                //send out vote requests
                 peersExcept
                 |> Map.map (fun _ _ ->
                     RequestVoteRpc
@@ -414,7 +432,9 @@ module Raft =
                                 // TODO should we really ignore here? propbably
                                 //rc.Reply (VoteResult { Term = state.Term.Current; VoteGranted = false })
                                 return! follow (setTerm rvr.Term state) 
-                        | _ -> return! candidate state
+                        | _ -> 
+                            warn "%s candidate: unmatched request: %s received %A" shortId (typeName msg) msg
+                            return! candidate state
                     | Some ((from, _, _), msg, None) ->
                         match msg with
                         | VoteResult vr when vr.Term > state.Term.Current ->
@@ -428,7 +448,7 @@ module Raft =
                             warn "%s candidate: client command: %s received and will be lost\r\n%A" shortId (typeName msg) msg
                             return! inner votes
                         | _ -> 
-                            debug "%s candidate: unmatched command: %s received from: %s" shortId (typeName msg) (short from)
+                            debug "%s candidate: unmatched reply: %s received from: %s" shortId (typeName msg) (short from)
                             return! inner votes
                     | None -> return! candidate state }
                 return! inner 1 }
@@ -522,11 +542,16 @@ module Raft =
 
                     | _ -> 
                         debug "%s follower: unmatched command: %s received from: %s" shortId (typeName msg) (short from)
+                        match rc with
+                        | Some rc ->
+                            rc.Reply RpcFail
+                        | None -> ()
                         return! follow state
                 | None -> 
                     return! candidate state }
 
             and wait () = async {
+                debug "enter wait"
                 let! msg = tryReceive 3000
                 match msg with
                 | None ->
@@ -561,34 +586,33 @@ module Raft =
                         return! follow (RaftState.create ep logContext termContext) }
             wait () )
 
-        //let subscriber = config.Receive |> Observable.subscribe agent.Post
-
-        member this.PostAndAsyncReply (f, data) = 
+        member internal __.PostAndAsyncReply (f, data) = 
             async {
                 let! response = agent.PostAndAsyncReply (fun rc -> f, data, Some rc)
-                return (response) }
-        member this.Post cmd = agent.Post (ep, cmd, None)
-        member this.AddPeer ep = agent.Post (ep, AddPeer ep, None)        
-        member this.RemovePeer ep = agent.Post (ep, RemovePeer ep, None)        
+                return response }
 
-        member this.Changes = changes.Publish
-        member this.Started = started.Publish
+        member __.Post cmd = agent.Post (ep, ClientCommand cmd, None)
+        member __.AddPeer ep = agent.Post (ep, AddPeer ep, None)        
+        member __.RemovePeer ep = agent.Post (ep, RemovePeer ep, None)        
 
-        member this.ClusterChanges = clusterChanges.Publish
+        member __.Changes = changes.Publish
+        member __.Started = started.Publish
 
-        member this.LogEntry = logger.Publish
+        member __.ClusterChanges = clusterChanges.Publish
 
-        member this.Error = agent.Error
+        member __.LogEntry = logger.Publish
+
+        member __.Error = agent.Error
 
         // for testing
-        member this.State = stateMachine.Get
-        member internal this.Id = id 
+        member __.State = stateMachine.Get
+        member __.Id = id 
 
         static member Start<'TState when 'TState : equality> (config : RaftConfig, initialState, apply) =
             new RaftAgent<'TState>(config, initialState, apply)
 
         interface IDisposable with
             member this.Dispose () = 
-                //dispose subscriber
+                dispose requestorObj
                 this.PostAndAsyncReply ((Guid.NewGuid(), "", 0), Exit) |> Async.RunSynchronously |> ignore
                 dispose agent

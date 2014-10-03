@@ -13,6 +13,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{674928D0
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FsRaft.Test", "tests\FsRaft.Test\FsRaft.Test.fsproj", "{5FF5122D-A693-4B90-A374-A1462D0AAD1E}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F6F9BCD8-E24D-4C4D-B012-EE3CEAC21820}"
+	ProjectSection(SolutionItems) = preProject
+		docs\content\index.fsx = docs\content\index.fsx
+		docs\content\tutorial.fsx = docs\content\tutorial.fsx
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

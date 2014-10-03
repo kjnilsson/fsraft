@@ -47,8 +47,6 @@ module Prelude =
             len / 2
         sorted.[m1]
 
-    let typeName o = (o.GetType ()).Name
-
     let dispose (o: obj) =
         match o with
         | :? IDisposable as x ->

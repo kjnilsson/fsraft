@@ -123,7 +123,7 @@ let create (network : MailboxProcessor<Network>) id port =
 
 let makeLeader id network port  =
     let l, config = create network id port
-    l.Post (ClientCommand <| (serialize <| Add 1))
+    l.Post ((serialize <| Add 1))
 //    send network id id (ClientCommand <| (serialize <| Add 1))
     Threading.Thread.Sleep 2500 // allow leader time to become leader
     l, config
@@ -194,7 +194,7 @@ let basic silent =
         for x = 0 to 100 do
             do! Async.Sleep 50
             if not silent then printf "*"
-            leader.Post (ClientCommand (randomOp()))
+            leader.Post (randomOp())
         awaitPeers peers |> ignore
         let isValid = validate peers
         network.PostAndReply (fun rc -> Shutdown rc)
