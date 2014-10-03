@@ -6,7 +6,7 @@ module Heartbeat =
     open FSharpx
     open Persistence
 
-    type Heartbeat (leaderId, ep : Endpoint, send : Endpoint -> RaftProtocol -> Async<RaftProtocol>, add : Endpoint -> RaftProtocol -> unit, initial, log) =
+    type Heartbeat<'T> (leaderId, ep : Endpoint, send : Endpoint -> RaftProtocol -> Async<RaftProtocol>, add : Endpoint -> RaftProtocol -> unit, initial : RaftState<'T>, log) =
         let peerId, _, _ = ep
         do printfn "new heartbeat: %A" (ep)
         let rpc state =
@@ -49,11 +49,11 @@ module Heartbeat =
                 dispose agent
 
 
-    type internal Protocol =
-        | State of RaftState
+    type internal Protocol<'T> =
+        | State of RaftState<'T>
         | Dispose of AsyncReplyChannel<unit>
 
-    type HeartbeatSuper (ep, send, add, initial, log) =
+    type HeartbeatSuper<'T> (ep, send, add, initial : RaftState<'T>, log) =
         let id,_,_ = ep
         let updatePeers state current =
             let peers =
@@ -68,20 +68,20 @@ module Heartbeat =
             let added = 
                 Map.difference peers current'
                 |> Map.map (fun k v -> 
-                    new Heartbeat(ep, k, send, add, state, log)) 
+                    new Heartbeat<'T>(ep, k, send, add, state, log)) 
             
             Map.merge added current'
 
         let agent = FSharp.Control.AutoCancelAgent.Start (fun inbox ->
 
             // optimisation to avoid a full IStructuralEquitable comparison
-            let changed (s1 : RaftState) (s2 : RaftState) =
+            let changed (s1 : RaftState<'T>) (s2 : RaftState<'T>) =
                 s1.CommitIndex <> s2.CommitIndex
                 || s1.Log.NextIndex <> s2.Log.NextIndex
                 || s1.Term <> s2.Term
                 || s1.Config <> s2.Config
 
-            let rec loop state (peers : Map<Endpoint, Heartbeat>) = 
+            let rec loop state (peers : Map<Endpoint, Heartbeat<'T>>) = 
                 async {
                     let! msg = inbox.Receive() 
                     match msg with
@@ -96,7 +96,7 @@ module Heartbeat =
                         rc.Reply ()
                     | _ ->
                         return! loop state peers }
-            loop initial Map.empty<Endpoint, Heartbeat>)
+            loop initial Map.empty<Endpoint, Heartbeat<'T>>)
 
         member __.State state = 
            agent.Post (State state)

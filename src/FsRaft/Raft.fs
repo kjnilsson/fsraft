@@ -54,7 +54,7 @@ module Raft =
             |> Lens.update (fun context -> Log.increment context entry) Lenses.log
         | _ -> state
 
-    let internal applyLogs log isLeader applyConfig applyCommand commitIndex state =
+    let internal applyLogs log isLeader changed applyConfig applyCommand commitIndex state =
         // this could potentially be slow for a leader if replication is much further
         // ahead of the commit index
         // we need FROM query as we need to apply cluster config ahead of the commit index
@@ -67,8 +67,11 @@ module Raft =
                 #if DEBUG
                 log (Debug (sprintf "raft :: %s applying command for index: %i, commitIndex: %i" (shortEp state.Id) e.TermIndex.Index commitIndex))
                 #endif
-                applyCommand isLeader cmd
-                { s with CommitIndex = e.TermIndex.Index }
+                let newState = applyCommand cmd state.State
+                changed cmd isLeader newState
+                { s with
+                    CommitIndex = e.TermIndex.Index
+                    State = newState }
             | Command _ -> s
             | ConfigEntry config -> 
                 #if DEBUG
@@ -77,8 +80,8 @@ module Raft =
                 let newCommitIndex = min commitIndex e.TermIndex.Index
                 { applyConfig config s with CommitIndex = newCommitIndex }) state
 
-    let applyLogsFollower log = applyLogs log false applyConfigFollower
-    let applyLogsLeader log = applyLogs log true (applyConfigLeader log)
+    let applyLogsFollower log changed = applyLogs log false changed applyConfigFollower
+    let applyLogsLeader log changed = applyLogs log true changed (applyConfigLeader log)
     
     let internal forwardCommitIndex state = 
         match Log.length state.Log with
@@ -95,16 +98,16 @@ module Raft =
         Log.hasEntryFromTerm state.Log state.Term.Current
 
     // evaluates the current state and applies any logs that have reached consensus.
-    let rec evaluate log applyCommand state =
+    let rec evaluate log changed applyCommand state =
         let proposed = forwardCommitIndex state
 
         if hasEntryFromCurrentTerm state then 
             let state' =
-                applyLogsLeader log applyCommand proposed state
+                applyLogsLeader log changed applyCommand proposed state
                 
             match state.Config, state'.Config with
             | Joint (_,_), Normal _ -> // only evaluate recursively if config has changed in this direction
-                evaluate log applyCommand state'
+                evaluate log changed applyCommand state'
             | _ -> state'
         else
             state
@@ -118,7 +121,7 @@ module Raft =
         | _ ->
             None
 
-    let addPeer log (changes : Event<ClusterChange>) (state : RaftState) peerId =
+    let addPeer<'T> log (changes : Event<ClusterChange>) (state : RaftState<'T>) peerId =
         match state.Config with
         | Normal n when not (Map.containsKey peerId n.Peers) ->
             changes.Trigger (Joined peerId)
@@ -137,11 +140,11 @@ module Raft =
             log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't add peer: %s" (shortEp state.Id) (shortEp peerId)))
             state        
 
-    let containsPeer (state : RaftState) peerId =
+    let containsPeer<'T> (state : RaftState<'T>) peerId =
         let allPeers = Lenses.configPeers |> Lens.get state
         Map.containsKey peerId allPeers
 
-    let removePeer log (changes : Event<ClusterChange>) (state : RaftState) peerId =
+    let removePeer<'T> log (changes : Event<ClusterChange>) (state : RaftState<'T>) peerId =
         match state.Config with
         | Normal n when (Map.containsKey peerId n.Peers) ->
             changes.Trigger (Left peerId)
@@ -156,37 +159,7 @@ module Raft =
             log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't remove peer: %s" (shortEp state.Id) (shortEp peerId)))
             state        
 
-
-    type internal StateMachineInteract<'TState> =
-        | Apply of bool * byte[]
-        | Restore of 'TState
-        | Get of AsyncReplyChannel<'TState>
-
-    // TODO: not sure state changes should be processed asyncronously
-    type internal StateMachine<'TState when 'TState : equality> (apply, initialState) =
-        let changed = Event<byte[] * bool * 'TState> ()
-        let agent = MailboxProcessor.Start (fun inbox ->
-            let rec loop state = async {
-                let! msg = inbox.Receive ()
-                match msg with
-                | Apply (leader, o) ->
-                    let state' = apply o state
-                    changed.Trigger (o, leader, state')
-                    return! loop state' 
-                | Restore state ->
-                    return! loop state
-                | Get rc ->
-                    rc.Reply state
-                    return! loop state }
-            loop initialState)
-        do agent.Error.Add raise
-        member __.Post = agent.Post
-        member __.Get () = 
-            agent.PostAndReply (fun rc -> Get rc)
-        member __.Changes = changed.Publish
-
-
-    type RaftAgent<'TState when 'TState : equality> (config : RaftConfig, initialState, apply) =
+    type RaftAgent<'TState when 'TState : equality> (config : RaftConfig, initialState : 'TState, apply) =
         let id, _, _ = config.Id
         let ep = config.Id
         let shortId = (short id)
@@ -197,7 +170,7 @@ module Raft =
 
         do debug "%s pending: started" shortId
 
-        let result (aer : AppendEntriesRpcData) result (state : RaftState) =
+        let result (aer : AppendEntriesRpcData) result (state : RaftState<'TState>) =
             AppendEntriesResult
                 { Term = state.Term.Current
                   Success = result 
@@ -208,16 +181,12 @@ module Raft =
 
         let started = Event<unit> ()
         let clusterChanges = Event<ClusterChange> ()
-
-        let stateMachine = StateMachine (apply, initialState)
-        let stateApply = fun isLeader c -> stateMachine.Post (Apply (isLeader, c))
-
         let changes = Event<byte[] * bool * 'TState> ()
 
         let setTerm term state =
             Lens.set term state Lenses.currentTerm
 
-        let setTermVotedFor (state : RaftState) term votedFor =
+        let setTermVotedFor (state : RaftState<'TState>) term votedFor =
             state.Term.Current <- term
             state.Term.VotedFor <- Some votedFor
             state
@@ -229,6 +198,7 @@ module Raft =
             let r = new Rpc.DuplexRpcTcpListener(ep, processMsg) 
             (fun x y -> r.Request(x, y)), r :> IDisposable
         
+        let changed a b c = changes.Trigger (a, b, c)
         let agent = MailboxProcessor<Endpoint * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
 
             let processMsg ident data =
@@ -259,7 +229,7 @@ module Raft =
                 inbox.TryReceive t
         
             let rec lead state = async {
-                let heartbeat = new HeartbeatSuper (ep, send, (fun e rp -> inbox.Post(e, rp, None)), state, logger.Trigger) // a use statement won't automatically call Dispose due to the mutual recursion.
+                let heartbeat = new HeartbeatSuper<'TState> (ep, send, (fun e rp -> inbox.Post(e, rp, None)), state, logger.Trigger) // a use statement won't automatically call Dispose due to the mutual recursion.
                 let! t = Async.CancellationToken
                 t.Register (fun () -> dispose heartbeat) |> ignore
 
@@ -278,10 +248,11 @@ module Raft =
                     dispose heartbeat
                     follow s
 
+
                 let rec inner state = async {
 
                     let state = 
-                        evaluate logger.Trigger stateApply state
+                        evaluate logger.Trigger changed apply state
                         |> heartbeat.State
 
                     let! fromEp, msg, rc = receive ()
@@ -363,7 +334,7 @@ module Raft =
                         return! inner state }
                 return! inner state }
 
-            and candidate (state : RaftState) = async {
+            and candidate (state : RaftState<'TState>) = async {
 
                 let peers = Lenses.configPeers |> Lens.get state
                 let peersExcept = peers |> Map.filter (fun k _ -> k <> state.Id)
@@ -453,7 +424,7 @@ module Raft =
                     | None -> return! candidate state }
                 return! inner 1 }
 
-            and follow (state : RaftState) = async {
+            and follow (state : RaftState<'TState>) = async {
                 let! msg = tryReceive (electionTimout ())
                 match msg with
                 | Some ((from, _, _) as fromEp, msg, rc) ->
@@ -488,7 +459,7 @@ module Raft =
                                 Leader = Some aer.LeaderId
                                 Log = Log.appendOrTruncate state.Log (max state.CommitIndex aer.PrevLogTermIndex.Index) entries }
                             |> setTerm aer.Term
-                            |> applyLogsFollower logger.Trigger stateApply aer.LeaderCommit 
+                            |> applyLogsFollower logger.Trigger changed apply aer.LeaderCommit 
 
                         match rc with
                         | Some rc ->
@@ -565,14 +536,12 @@ module Raft =
                         let logContext = makeContext config.LogStream
                         let termContext = new TermContext (config.TermStream)
                         let s =
-                            RaftState.create ep logContext termContext
-                            |> applyLogsFollower logger.Trigger stateApply aer.LeaderCommit  
+                            RaftState<'TState>.create ep initialState logContext termContext
+                            |> applyLogsFollower logger.Trigger changed apply aer.LeaderCommit  
 
-                        let _ = Observable.awaitPause stateMachine.Changes 2000.0
                         debug "%s pending: finished applying stored state - current commit index: %i - leader: %i" shortId s.CommitIndex aer.LeaderCommit
-                        stateMachine.Changes.Add changes.Trigger
                         started.Trigger ()
-                        changes.Trigger ([||], false, stateMachine.Get())
+                        changes.Trigger ([||], false, initialState)
                         inbox.Post msg.Value
                         return! follow s
                     | _ -> 
@@ -581,9 +550,8 @@ module Raft =
                         let termContext = new TermContext (config.TermStream)
                         if logContext.NextIndex > 1 then 
                             failwith "%s pending: Not Good! - starting node with previous logs without a commit index can be fatal" shortId
-                        stateMachine.Changes.Add changes.Trigger
                         started.Trigger ()
-                        return! follow (RaftState.create ep logContext termContext) }
+                        return! follow (RaftState<'TState>.create ep initialState logContext termContext) }
             wait () )
 
         member internal __.PostAndAsyncReply (f, data) = 
@@ -605,7 +573,7 @@ module Raft =
         member __.Error = agent.Error
 
         // for testing
-        member __.State = stateMachine.Get
+//        member __.State = stateMachine.Get
         member __.Id = id 
 
         static member Start<'TState when 'TState : equality> (config : RaftConfig, initialState, apply) =

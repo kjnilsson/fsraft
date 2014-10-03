@@ -44,19 +44,21 @@ module Model =
 
     open FsRaft.Persistence
 
-    type RaftState = 
+    type RaftState<'T> = 
         { Id : Endpoint
           Term : TermContext
           Leader : Endpoint option
           Log : LogContext 
           CommitIndex : int
+          State : 'T
           Config : Configuration }
-        static member create id logContext termContext =
+        static member create id state logContext termContext =
           { Id = id
             Term = termContext
             Log = logContext
             Leader = None
             CommitIndex = 0
+            State = state
             Config = Normal { Peers = Map.empty } }
         interface IDisposable with
             member x.Dispose () =
@@ -148,23 +150,23 @@ module Lenses =
     open FSharpx.Lens.Operators
 
     let config =
-        { Get = fun (state : RaftState) -> state.Config
+        { Get = fun (state : RaftState<_>) -> state.Config
           Set = fun config state -> { state with Config = config } }
 
     let log =
-        { Get = fun (state : RaftState) -> state.Log
+        { Get = fun (state : RaftState<_>) -> state.Log
           Set = fun log state -> { state with Log = log } }
 
     let commitIndex =
-        { Get = fun (state : RaftState) -> state.CommitIndex
+        { Get = fun (state : RaftState<_>) -> state.CommitIndex
           Set = fun ci state -> { state with CommitIndex = ci } }
 
     let currentTerm =
-        { Get = fun (state : RaftState) -> state.Term.Current
+        { Get = fun (state : RaftState<_>) -> state.Term.Current
           Set = fun ct state -> state.Term.Current <- ct; state  }
 
     let leader =
-        { Get = fun (state : RaftState) -> state.Leader
+        { Get = fun (state : RaftState<_>) -> state.Leader
           Set = fun leader state -> { state with Leader = leader } }
 
     let peers = 
@@ -177,7 +179,8 @@ module Lenses =
             | Joint (o, n) ->
                 Joint ({ Peers = Map.update o.Peers peers }, { Peers = Map.update n.Peers peers }) }
 
-    let configPeers = config >>| peers
+    let configPeers<'T> : (Lens<RaftState<'T>, Map<Endpoint, Peer>>)= 
+        config >>| peers
 
     let configPeer id = configPeers >>| Lens.forMap id
 
