@@ -47,7 +47,7 @@ module Prelude =
             len / 2
         sorted.[m1]
 
-    let dispose (o: obj) =
+    let inline dispose (o: obj) =
         match o with
         | :? IDisposable as x ->
             x.Dispose ()
@@ -69,11 +69,11 @@ module Observable =
 [<RequireQualifiedAccess>]
 module Option =
 
-    let protect f =
+    let inline protect f =
         try Some (f())
         with | _ -> None
 
-    let iterNone f =
+    let inline iterNone f =
         function
         | None -> f ()
         | _ -> ()
@@ -83,65 +83,65 @@ module Guid =
 
     open System
 
-    let guid () =
+    let inline guid () =
         Guid.NewGuid ()
 
-    let short (guid: Guid) =
+    let inline short (guid: Guid) =
         (string guid).Substring(0, 8)
 
-    let lower (s : string) = s.ToLower ()
+    let inline lower (s : string) = s.ToLower ()
 
 [<RequireQualifiedAccess>]
 module Map =
 
     /// returns a new map with the keys from m2 removed from m1
-    let difference m1 m2 =
+    let inline difference m1 m2 =
         Map.fold (fun s k _ -> Map.remove k s) m1 m2
 
     /// filters m1 by the keys that ar elso present in m2
-    let intersect m1 m2 =
+    let inline intersect m1 m2 =
         Map.fold (fun s k v ->
             if Map.containsKey k m2 then
                 Map.add k v s
             else s) Map.empty m1 
 
-    let zipIntersect m1 m2 =
+    let inline zipIntersect m1 m2 =
         Map.fold (fun s k v ->
             match Map.tryFind k m2 with
             | Some x -> Map.add k (v, x) s
             | None -> s) Map.empty m1
 
     /// merges two maps using f - if there are identical keys present the key in m1 will be used
-    let mergeWith f m1 m2 = 
+    let inline mergeWith f m1 m2 = 
         Map.fold (fun s k v ->
             match Map.tryFind k s with
             | Some x -> Map.add k (f x v) s
             | None -> Map.add k v s) m1 m2 
 
     /// merges two maps - if there are identical keys present the key in m1 will be used
-    let merge m1 m2 =
+    let inline merge m1 m2 =
         mergeWith (fun x _ -> x) m1 m2
 
     /// updates exisiting values in m1 with values from matching keys in m2
-    let update m1 m2 =
+    let inline update m1 m2 =
         Map.fold (fun s k v ->
             match Map.tryFind k s with
             | Some x -> Map.add k v s
             | None -> s) m1 m2
 
-    let except key =
+    let inline except key =
         Map.filter (fun k _ -> k <> key)
 
     /// concatenates a list of maps using the merge function. head first.
-    let concat maps =
+    let inline concat maps =
         List.fold merge Map.empty maps 
 
     /// returns a list of the keys in the map 
-    let keys m =
+    let inline keys m =
         Map.foldBack (fun k _ s -> k :: s) m []
 
     /// returns a list of the values in the map 
-    let values m =
+    let inline values m =
         Map.foldBack (fun _ v s -> v :: s) m []
 
-    let count (m : Map<'T,'T2>) = m.Count
+    let inline count (m : Map<'T,'T2>) = m.Count

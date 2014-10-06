@@ -3,8 +3,6 @@
 open System
 open System.IO
 open FSharpx
-open FSharpx.State
-open FSharpx.Lens.Operators
 open Nessos.FsPickler
 
 [<AutoOpen>]
@@ -54,13 +52,13 @@ module Raft =
             |> Lens.update (fun context -> Log.increment context entry) Lenses.log
         | _ -> state
 
-    let internal applyLogs log isLeader changed applyConfig applyCommand commitIndex state =
+    let internal applyLogs log isLeader applyConfig applyCommand commitIndex state =
         // this could potentially be slow for a leader if replication is much further
         // ahead of the commit index
         // we need FROM query as we need to apply cluster config ahead of the commit index
         let entries = Log.query state.Log (From <| state.CommitIndex + 1) |> Seq.toList
         entries
-        |> List.fold (fun s e ->
+        |> List.fold (fun (s, changes) e ->
             match e.Content with
             | Command cmd when e.TermIndex.Index <= commitIndex -> 
                 if e.TermIndex.Index <= state.CommitIndex then failwith "noooo"
@@ -68,20 +66,20 @@ module Raft =
                 log (Debug (sprintf "raft :: %s applying command for index: %i, commitIndex: %i" (shortEp state.Id) e.TermIndex.Index commitIndex))
                 #endif
                 let newState = applyCommand cmd state.State
-                changed cmd isLeader newState
                 { s with
                     CommitIndex = e.TermIndex.Index
-                    State = newState }
-            | Command _ -> s
+                    State = newState }, (cmd, isLeader, newState) :: changes
+            | Command _ -> s, changes
             | ConfigEntry config -> 
                 #if DEBUG
                 log (Debug (sprintf "raft :: %s applying config for index: %i, commitIndex: %i" (shortEp state.Id) e.TermIndex.Index commitIndex))
                 #endif
                 let newCommitIndex = min commitIndex e.TermIndex.Index
-                { applyConfig config s with CommitIndex = newCommitIndex }) state
+                { applyConfig config s 
+                    with CommitIndex = newCommitIndex }, changes) (state, [])
 
-    let applyLogsFollower log changed = applyLogs log false changed applyConfigFollower
-    let applyLogsLeader log changed = applyLogs log true changed (applyConfigLeader log)
+    let applyLogsFollower log = applyLogs log false applyConfigFollower
+    let applyLogsLeader log = applyLogs log true (applyConfigLeader log)
     
     let internal forwardCommitIndex state = 
         match Log.length state.Log with
@@ -98,19 +96,20 @@ module Raft =
         Log.hasEntryFromTerm state.Log state.Term.Current
 
     // evaluates the current state and applies any logs that have reached consensus.
-    let rec evaluate log changed applyCommand state =
+    let rec evaluate log applyCommand state changes =
         let proposed = forwardCommitIndex state
 
         if hasEntryFromCurrentTerm state then 
-            let state' =
-                applyLogsLeader log changed applyCommand proposed state
+            let state', changes' =
+                applyLogsLeader log applyCommand proposed state
+            let changes = changes @ List.rev changes'
                 
             match state.Config, state'.Config with
             | Joint (_,_), Normal _ -> // only evaluate recursively if config has changed in this direction
-                evaluate log changed applyCommand state'
-            | _ -> state'
+                evaluate log applyCommand state' changes
+            | _ -> state', changes
         else
-            state
+            state, changes
 
     let castVote currentTerm (lastLogTermIndex : TermIndex) (theirLastLogTermIndex : TermIndex) =
         match theirLastLogTermIndex, lastLogTermIndex with
@@ -196,9 +195,8 @@ module Raft =
         // TODO move this to configuration
         let rpcFactory processMsg = 
             let r = new Rpc.DuplexRpcTcpListener(ep, processMsg) 
-            (fun x y -> r.Request(x, y)), r :> IDisposable
+            (fun ident b -> r.Request(ident, b)), r :> IDisposable
         
-        let changed a b c = changes.Trigger (a, b, c)
         let agent = MailboxProcessor<Endpoint * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
 
             let processMsg ident data =
@@ -212,7 +210,7 @@ module Raft =
                         |> serialize }
 
             let request, requestor = rpcFactory processMsg 
-            requestorObj <- requestor
+            requestorObj <- requestor//need this to ensure it gets disposed.
 
             let send peer (msg : RaftProtocol) = 
                 async {
@@ -222,11 +220,8 @@ module Raft =
                     | Some res -> return deserialize res
                     | None -> return RpcFail }
 
-            let receive () = 
-                inbox.Receive ()
-
-            let tryReceive t =
-                inbox.TryReceive t
+            let receive () = inbox.Receive ()
+            let tryReceive t = inbox.TryReceive t
         
             let rec lead state = async {
                 let heartbeat = new HeartbeatSuper<'TState> (ep, send, (fun e rp -> inbox.Post(e, rp, None)), state, logger.Trigger) // a use statement won't automatically call Dispose due to the mutual recursion.
@@ -242,18 +237,19 @@ module Raft =
                 let state =
                     Lenses.configPeers |> Lens.get state
                     |> Map.fold (fun s k _ ->
-                        exec (Lenses.peerModifier k (fun _ -> Some (Log.lastTermIndex state.Log).Index) (fun _ -> Some 0)) s) state
+                        State.exec (Lenses.peerModifier k (fun _ -> Some (Log.lastTermIndex state.Log).Index) (fun _ -> Some 0)) s) state
 
                 let follow = fun s ->
                     dispose heartbeat
                     follow s
 
-
                 let rec inner state = async {
 
-                    let state = 
-                        evaluate logger.Trigger changed apply state
-                        |> heartbeat.State
+                    let state, newChanges = 
+                        evaluate logger.Trigger apply state []
+
+                    let state = heartbeat.State state
+                    List.iter changes.Trigger newChanges
 
                     let! fromEp, msg, rc = receive ()
                     let from, _, _  = fromEp
@@ -354,8 +350,7 @@ module Raft =
                 |> Map.map (fun k v ->
                     async {
                         let! resp = send k v
-                        inbox.Post (k, resp, None)
-                         })
+                        inbox.Post (k, resp, None) })
                 |> Map.toSeq
                 |> Seq.map snd
                 |> Async.Parallel
@@ -378,9 +373,10 @@ module Raft =
                             dispose state
                             printfn "exiting"
                             rc.Reply Exit
+
                         | AppendEntriesRpc aer when aer.Term >= state.Term.Current ->
                             debug "%s candidate: AppendEntriesRpc received with greater or equal term %i >= %i - candidate withdrawing" shortId aer.Term state.Term.Current
-                            inbox.Post(fromEp, msg, Some rc) //self post
+                            inbox.Post (fromEp, msg, Some rc) //self post
                             return! follow <| setTerm aer.Term state
 
                         | AppendEntriesRpc aer -> // ensure leader with lower term steps down
@@ -415,7 +411,7 @@ module Raft =
                         | VoteResult vr when vr.VoteGranted && vr.Term = state.Term.Current ->
                             return! inner (votes + 1)
 
-                        | ClientCommand cmd ->
+                        | ClientCommand _ ->
                             warn "%s candidate: client command: %s received and will be lost\r\n%A" shortId (typeName msg) msg
                             return! inner votes
                         | _ -> 
@@ -454,12 +450,14 @@ module Raft =
                         #if DEBUG
                         if entries.Length > 0 then debug "%s follower: AppendEntriesRpc %i logs received" shortId entries.Length
                         #endif
-                        let state' =
+                        let state', newChanges =
                             { state with
                                 Leader = Some aer.LeaderId
                                 Log = Log.appendOrTruncate state.Log (max state.CommitIndex aer.PrevLogTermIndex.Index) entries }
                             |> setTerm aer.Term
-                            |> applyLogsFollower logger.Trigger changed apply aer.LeaderCommit 
+                            |> applyLogsFollower logger.Trigger apply aer.LeaderCommit
+
+                        List.iter changes.Trigger newChanges
 
                         match rc with
                         | Some rc ->
@@ -535,9 +533,11 @@ module Raft =
                         debug "%s pending: AppendEntriesRpc start message received" shortId
                         let logContext = makeContext config.LogStream
                         let termContext = new TermContext (config.TermStream)
-                        let s =
+                        let s, newChanges =
                             RaftState<'TState>.create ep initialState logContext termContext
-                            |> applyLogsFollower logger.Trigger changed apply aer.LeaderCommit  
+                            |> applyLogsFollower logger.Trigger apply aer.LeaderCommit  
+
+                        List.iter changes.Trigger newChanges
 
                         debug "%s pending: finished applying stored state - current commit index: %i - leader: %i" shortId s.CommitIndex aer.LeaderCommit
                         started.Trigger ()
@@ -563,7 +563,7 @@ module Raft =
         member __.AddPeer ep = agent.Post (ep, AddPeer ep, None)        
         member __.RemovePeer ep = agent.Post (ep, RemovePeer ep, None)        
 
-        member __.Changes = changes.Publish
+        member __.Changes = Event.map (fun x -> x) changes.Publish
         member __.Started = started.Publish
 
         member __.ClusterChanges = clusterChanges.Publish

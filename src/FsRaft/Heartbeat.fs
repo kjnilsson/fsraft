@@ -67,7 +67,7 @@ module Heartbeat =
             
             let added = 
                 Map.difference peers current'
-                |> Map.map (fun k v -> 
+                |> Map.map (fun k _ -> 
                     new Heartbeat<'T>(ep, k, send, add, state, log)) 
             
             Map.merge added current'
@@ -89,7 +89,7 @@ module Heartbeat =
                         let peers = updatePeers s peers
                         // distribute update state to all peers
                         peers
-                        |> Map.iter (fun k v -> v.State s |> ignore)
+                        |> Map.iter (fun _ v -> v.State s |> ignore)
                         return! loop s peers
                     | Dispose rc ->
                         peers |> Map.values |> List.iter dispose
