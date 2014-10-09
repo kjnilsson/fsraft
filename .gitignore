@@ -9,7 +9,9 @@
 # Xamarin Studio / monodevelop user-specific
 *.userprefs
 
-# Build results
+#Vim
+*.swp
+## Build results
 
 [Dd]ebug/
 [Rr]elease/
