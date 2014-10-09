@@ -9,7 +9,9 @@ open System.Threading
 let encode (s : string) = Text.Encoding.UTF8.GetBytes s
 let decode (b : byte []) = Text.Encoding.UTF8.GetString b
 
-type Correlation = | Correlation of byte[]
+type Correlation = Correlation of byte[]
+
+type Identifier = Guid * string * int
 
 let decodeCorr (Correlation c) =
     decode c
@@ -66,14 +68,12 @@ let readIdentifier (stream : Stream) =
         | _ -> return failwith "invalid identifier" }
     |> Async.Catch
 
-type Identifier = Guid * string * int
-
 let writeIdentifier (ident : Identifier) (s : Stream) =
     async {
         let i, h, p = ident
-        let me = sprintf "%O@%s:%i" i h p 
+        let me = sprintf "%O@%s:%i" i h p |> encode 
         do! s.AsyncWrite (BitConverter.GetBytes me.Length)
-        do! s.AsyncWrite (me |> encode)   }
+        do! s.AsyncWrite me }
 
 
 type DuplexRpcProtocol =
@@ -216,7 +216,7 @@ type DuplexRpcTcpListener (identity : Identifier, getResponse : Identifier -> by
     do async {
         while true do
             let! client = listener.AcceptTcpClientAsync() |> Async.AwaitTask
-            printfn "new client connection from %A"  client.Client.RemoteEndPoint
+            printfn "new client connection from %A" client.Client.RemoteEndPoint
             let stream = client.GetStream()
             let! ident = readIdentifier stream
             // TODO validate ident

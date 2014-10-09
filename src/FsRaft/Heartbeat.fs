@@ -19,7 +19,7 @@ module Heartbeat =
                         AppendEntriesRpc
                             { Term = state.Term.Current 
                               LeaderId = leaderId
-                              PrevLogTermIndex = Log.termIndex state.Log (v.NextIndex - 1)
+                              PrevLogTermIndex = Log.termIndex state.Log (v.NextIndex - 1) //TODO this can go below 0!!
                               Entries = Log.query state.Log (Range (v.NextIndex - 1, v.NextIndex + 4)) |> Seq.toList
                               LeaderCommit = state.CommitIndex } 
                 return add ep reply }

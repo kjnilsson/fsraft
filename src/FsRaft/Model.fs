@@ -117,7 +117,7 @@ module Log =
         context.NextIndex - 1 // TODO check this is right.
 
     let termIndex (context : LogContext) index =
-        if index < 0 then failwith "argh"
+        if index < 0 then failwith "termIndex failed as index < 0"
         match Map.tryFind index context.Index with
         | Some (t, _) ->
             { Term = t; Index = index }

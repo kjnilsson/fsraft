@@ -12,9 +12,11 @@ module Raft =
     open Persistence
     open Microsoft.FSharp.Reflection
 
+    type Identifier = Rpc.Identifier
+
     type RaftConfig =
         { Id : Endpoint
-          Send : Endpoint -> byte[] -> Async<byte[]> //from, to, message
+          RpcFactory : ((Identifier -> byte[] -> Async<byte[]>) -> ((Identifier -> byte[] -> Async<byte[] option>) * IDisposable)) option
           Register : unit -> unit
           LogStream : Stream 
           TermStream : Stream }
@@ -56,9 +58,9 @@ module Raft =
         // this could potentially be slow for a leader if replication is much further
         // ahead of the commit index
         // we need FROM query as we need to apply cluster config ahead of the commit index
-        let entries = Log.query state.Log (From <| state.CommitIndex + 1) |> Seq.toList
+        let entries = Log.query state.Log (From <| state.CommitIndex + 1)
         entries
-        |> List.fold (fun (s, changes) e ->
+        |> Seq.fold (fun (s, changes) e ->
             match e.Content with
             | Command cmd when e.TermIndex.Index <= commitIndex -> 
                 if e.TermIndex.Index <= state.CommitIndex then failwith "noooo"
@@ -167,6 +169,8 @@ module Raft =
         let debug msg = debug "raft" logger msg
         let warn msg = warn "raft" logger msg
 
+        let mutable clientState : 'TState = initialState
+
         do debug "%s pending: started" shortId
 
         let result (aer : AppendEntriesRpcData) result (state : RaftState<'TState>) =
@@ -179,6 +183,7 @@ module Raft =
                     else aer.PrevLogTermIndex }
 
         let started = Event<unit> ()
+        let becameLeader = Event<unit> ()
         let clusterChanges = Event<ClusterChange> ()
         let changes = Event<byte[] * bool * 'TState> ()
 
@@ -192,10 +197,12 @@ module Raft =
 
         let mutable requestorObj = null 
 
-        // TODO move this to configuration
-        let rpcFactory processMsg = 
-            let r = new Rpc.DuplexRpcTcpListener(ep, processMsg) 
-            (fun ident b -> r.Request(ident, b)), r :> IDisposable
+        let rpcFactory = 
+            defaultArg 
+                config.RpcFactory 
+                (fun handleRequest ->
+                    let r = new Rpc.DuplexRpcTcpListener(ep, handleRequest) 
+                    (fun ident b -> r.Request(ident, b)), r :> IDisposable)
         
         let agent = MailboxProcessor<Endpoint * RaftProtocol * AsyncReplyChannel<RaftProtocol> option>.Start (fun inbox ->
 
@@ -242,6 +249,8 @@ module Raft =
                 let follow = fun s ->
                     dispose heartbeat
                     follow s
+                
+                becameLeader.Trigger ()
 
                 let rec inner state = async {
 
@@ -250,6 +259,7 @@ module Raft =
 
                     let state = heartbeat.State state
                     List.iter changes.Trigger newChanges
+                    clientState <- state.State
 
                     let! fromEp, msg, rc = receive ()
                     let from, _, _  = fromEp
@@ -446,6 +456,7 @@ module Raft =
                         return! follow state
 
                     | AppendEntriesRpc aer ->
+                        let logIndexCount = state.Log.Index.Count
                         let entries = aer.Entries |> List.filter (fun x -> x.TermIndex.Index > state.CommitIndex)
                         #if DEBUG
                         if entries.Length > 0 then debug "%s follower: AppendEntriesRpc %i logs received" shortId entries.Length
@@ -458,6 +469,7 @@ module Raft =
                             |> applyLogsFollower logger.Trigger apply aer.LeaderCommit
 
                         List.iter changes.Trigger newChanges
+                        clientState <- state'.State
 
                         match rc with
                         | Some rc ->
@@ -465,7 +477,7 @@ module Raft =
                         | None -> ()
 
                         if not (aer.PrevLogTermIndex.Index + aer.Entries.Length >= state'.Log.Index.Count) then
-                            printfn "UGH: %s %A" shortId aer.PrevLogTermIndex
+                            printfn "UGH: %s %A lic: %i after: %i new changes %i commitIndex %i entries: %i" shortId aer.PrevLogTermIndex logIndexCount (state'.Log.Index.Count) (newChanges.Length) state.CommitIndex entries.Length
                         else ()
                         return! follow state'
                     
@@ -537,6 +549,8 @@ module Raft =
                             RaftState<'TState>.create ep initialState logContext termContext
                             |> applyLogsFollower logger.Trigger apply aer.LeaderCommit  
 
+                        clientState <- s.State
+
                         List.iter changes.Trigger newChanges
 
                         debug "%s pending: finished applying stored state - current commit index: %i - leader: %i" shortId s.CommitIndex aer.LeaderCommit
@@ -565,6 +579,7 @@ module Raft =
 
         member __.Changes = Event.map (fun x -> x) changes.Publish
         member __.Started = started.Publish
+        member __.BecameLeader = becameLeader.Publish
 
         member __.ClusterChanges = clusterChanges.Publish
 
@@ -573,7 +588,8 @@ module Raft =
         member __.Error = agent.Error
 
         // for testing
-//        member __.State = stateMachine.Get
+        member __.State = clientState
+
         member __.Id = id 
 
         static member Start<'TState when 'TState : equality> (config : RaftConfig, initialState, apply) =

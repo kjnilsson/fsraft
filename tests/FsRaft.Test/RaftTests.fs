@@ -63,7 +63,7 @@ module RaftTests_castVote =
         { TermIndex = TermIndex.create term index
           Content = Command (string index |> Text.Encoding.UTF8.GetBytes) }
 
-    let addEntries n (state : RaftState) =
+    let addEntries n (state : RaftState<_>) =
         [ state.Log.NextIndex .. state.Log.NextIndex + n - 1]
         |> List.fold (fun s x ->
             { s with Log = Log.add s.Log (addEntry x state.Term.Current) }) state
@@ -77,11 +77,12 @@ module RaftTests_castVote =
         let termContext = new TermContext (termStream)
 
         let appliedCount = ref 0
-        let apply = fun _ _ -> appliedCount := !appliedCount + 1
+        let apply = 
+            fun _ _ -> appliedCount := !appliedCount + 1; !appliedCount
 
-        let raftState = RaftState.create id context termContext |> addEntries 5
+        let raftState = RaftState<int>.create id 0 context termContext |> addEntries 5
          
-        let result = Raft.applyLogs ignore false (fun c s -> s) apply 2 raftState
+        let result, _ = Raft.applyLogs ignore false (fun c s -> s) apply 2 raftState
         assertEqual 2 (!appliedCount)
         let result = Raft.applyLogs ignore false (fun c s -> s) apply 5 result
         assertEqual 5 (!appliedCount)
@@ -93,11 +94,11 @@ module RaftTests_castVote =
         use termStream = new MemoryStream () 
         let context = makeContext stream
         let termContext = new TermContext(termStream)
-        let apply = fun _ _ -> ()
+        let apply = fun _ _ -> 0
 
-        let raftState = RaftState.create id context termContext |> addEntries 5
+        let raftState = RaftState<_>.create id 0 context termContext |> addEntries 5
 
-        let result = Raft.applyLogs ignore false (fun _ s -> s) apply 7 raftState
+        let result, _ = Raft.applyLogs ignore false (fun _ s -> s) apply 7 raftState
         assertEqual 5 result.CommitIndex
 
     [<Test>]
@@ -114,7 +115,7 @@ module RaftTests_castVote =
         let c2 = { Peers = [peer1Id, peer1; peer2Id, peer2] |> Map.ofList } //next index change here is to simulate progress being made for replication of other logs
         let c2' = { c2 with Peers = c2.Peers |> Map.map (fun k v -> {v with NextIndex = 10 }) }
         let config = Joint(c1, c2)
-        let state = RaftState.create (Guid.NewGuid(), "", 0) context termContext
+        let state = RaftState<_>.create (Guid.NewGuid(), "", 0) 0 context termContext
         let stateConfig = Joint(c1, c2' )
         let state = { state with Config = stateConfig }
         

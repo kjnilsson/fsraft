@@ -41,7 +41,7 @@ let makeEndpoint (g: Guid) port =
 
 let makeConfig endpoint =
     { Id = endpoint
-      Send = fun x y -> async { return y }
+      RpcFactory = None //this means it will use tcp 
       Register = id
       LogStream = new MemoryStream()
       TermStream = new MemoryStream() }
