@@ -53,6 +53,7 @@ module Heartbeat =
         | State of RaftState<'T>
         | Dispose of AsyncReplyChannel<unit>
 
+
     type HeartbeatSuper<'T> (ep, send, add, initial : RaftState<'T>, log) =
         let id,_,_ = ep
         let updatePeers state current =

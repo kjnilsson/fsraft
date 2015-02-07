@@ -13,7 +13,7 @@ module Logging =
         | Error of string * Exception
 
     let inline debug category (event: Event<RaftLogEntry>) format =
-        let prefix = sprintf "%s :: "  category
+        let prefix = sprintf "%s :: " category
         ksprintf (fun s -> event.Trigger (Debug (prefix + s))) format
 
     let inline warn category (event: Event<RaftLogEntry>) format =
@@ -21,7 +21,6 @@ module Logging =
         ksprintf (fun s -> event.Trigger (Warn (prefix + s))) format
 
 module RaftConstants = 
-
 
     [<Literal>]
     let heartbeat = 250

@@ -40,7 +40,8 @@ module Raft =
         match FSharpValue.GetUnionFields(x, typeof<RaftProtocol>) with
         | case, _ -> case.Name
 
-    let electionTimout () = random.Next (RaftConstants.electionTimeoutFrom, RaftConstants.electionTimeoutTo)
+    let electionTimout () = 
+        random.Next (RaftConstants.electionTimeoutFrom, RaftConstants.electionTimeoutTo)
 
     let applyConfigFollower config state =
         { state with Config = config }
@@ -568,7 +569,7 @@ module Raft =
                         return! follow (RaftState<'TState>.create ep initialState logContext termContext) }
             wait () )
 
-        member internal __.PostAndAsyncReply (f, data) = 
+        member __.PostAndAsyncReply (f, data) = 
             async {
                 let! response = agent.PostAndAsyncReply (fun rc -> f, data, Some rc)
                 return response }

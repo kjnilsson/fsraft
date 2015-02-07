@@ -1,14 +1,14 @@
 ﻿#r "bin/Debug/FSharpx.Core.dll"
 #r "bin/Debug/FsPickler.dll"
 
-#load "Persistence.fs"
 #load "Prelude.fs"
+#load "Persistence.fs"
 open FsRaft
 #load "Model.fs"
 
 open System
 open System.IO
-open FsPickler
+open Nessos.FsPickler
 open FsRaft.Persistence
 
 type Status =
@@ -46,13 +46,13 @@ let context = makeContext fileStream
 let context' = 
     [0..10000]
     |> List.fold (fun state n -> 
-        writeRecord state (state.NextIndex, 1, app) ) context
+        writeRecord state (state.NextIndex, 1L, app) ) context
 //
 fileStream.Flush()
 fileStream.Dispose ()
 //tryGet context' 10
-let context'' = writeRecord context' (context'.NextIndex, 2, app)
-let context''' = writeRecord context'' (context''.NextIndex, 3, app)
+let context'' = writeRecord context' (context'.NextIndex, 2L, app)
+let context''' = writeRecord context'' (context''.NextIndex, 3L, app)
 tryGet context' 9
 fileStream.Close ()
 let data = Array.zeroCreate<byte> 10000

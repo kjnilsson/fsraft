@@ -6,7 +6,6 @@ open Nessos.FsPickler
 open FsRaft
 open FsRaft.Messages
 
-
 type Network =
     | Register of Guid * (Endpoint -> byte [] -> Async<byte[]>)
     | Rpc of Endpoint * Endpoint * AsyncReplyChannel<Endpoint -> byte[] -> Async<byte[]>> //from to msg
@@ -100,7 +99,7 @@ let create (network : MailboxProcessor<Network>) id =
           Register = fun () -> ()
           LogStream = new MemoryStream()
           TermStream = new MemoryStream() }
-     
+
     let agent = RaftAgent.Start<TestState> (config, (0,0,[]), apply)
     let rpc f data =
         async {
