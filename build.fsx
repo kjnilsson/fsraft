@@ -126,6 +126,7 @@ Target "Build" (fun _ ->
 Target "RunTests" (fun _ ->
     !! testAssemblies
     |> NUnit (fun p ->
+        printfn "p: %A" p
         { p with
             DisableShadowCopy = true
             TimeOut = TimeSpan.FromMinutes 20.

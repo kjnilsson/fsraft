@@ -11,6 +11,10 @@
 
 #Vim
 *.swp
+
+
+#Pajet
+paket*.exe
 ## Build results
 
 [Dd]ebug/

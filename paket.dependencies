@@ -1,0 +1,7 @@
+source https://nuget.org/api/v2
+source https://www.nuget.org/api/v2
+
+nuget FSharpx.Core 1.8.41
+nuget FsPickler 0.8.6.2
+nuget NUnit 2.6.3
+nuget NUnit.Runners
