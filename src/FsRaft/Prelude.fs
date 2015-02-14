@@ -9,16 +9,21 @@ module Logging =
 
     type RaftLogEntry =
         | Debug of string
+        | Info of string
         | Warn of string
-        | Error of string * Exception
+        | Error of string * exn
 
-    let inline debug category (event: Event<RaftLogEntry>) format =
+    let inline debug category (evt: Event<RaftLogEntry>) format =
         let prefix = sprintf "%s :: " category
-        ksprintf (fun s -> event.Trigger (Debug (prefix + s))) format
+        ksprintf (fun s -> evt.Trigger (Debug (prefix + s))) format
 
-    let inline warn category (event: Event<RaftLogEntry>) format =
-        let prefix = sprintf " %s :: "  category
-        ksprintf (fun s -> event.Trigger (Warn (prefix + s))) format
+    let inline info category (evt: Event<RaftLogEntry>) format =
+        let prefix = sprintf "%s :: " category
+        ksprintf (fun s -> evt.Trigger (Info (prefix + s))) format
+
+    let inline warn category (evt: Event<RaftLogEntry>) format =
+        let prefix = sprintf "%s :: "  category
+        ksprintf (fun s -> evt.Trigger (Warn (prefix + s))) format
 
 module RaftConstants = 
 

@@ -60,10 +60,16 @@ module Model =
             CommitIndex = 0
             State = state
             Config = Normal { Peers = Map.empty } }
+        member s.show () =
+            let config = match s.Config with
+                         | Normal p -> sprintf "Normal %i peers" p.Peers.Count
+                         | Joint _ -> "Joint"
+            sprintf "Term: %i Commit: %i NextLogIndex: %i LogIndexCount: %i Config: %s" (s.Term.Current) (s.CommitIndex) s.Log.NextIndex s.Log.Index.Count config
         interface IDisposable with
             member x.Dispose () =
                 dispose x.Log
                 dispose x.Term
+            
 
 
 module Log =
@@ -135,6 +141,7 @@ module Log =
     let range context start finish =
         query context (Range(start, finish))
 
+    //the previous term index exists and is correct in our log
     let isConsistent context (termIndex : TermIndex) =
         match Map.tryFind termIndex.Index context.Index with
         | Some (term, _) -> term = termIndex.Term

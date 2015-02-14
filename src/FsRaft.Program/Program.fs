@@ -64,9 +64,9 @@ let makeNetwork () =
 
 let pickler = new FsPickler()
 
-let deserialize (x:byte[]) =
+let deserialize<'T> (x:byte[]) =
     use s = new IO.MemoryStream(x)
-    pickler.Deserialize s
+    pickler.Deserialize<'T> s
 
 let serialize x =
     use s = new MemoryStream()
@@ -82,6 +82,13 @@ let call (network : MailboxProcessor<Network>) f t data =
 type Calc =
     | Add of int
     | Div of int
+
+let printLog (e: RaftLogEntry) =
+    match e with
+    | Debug _ -> ()
+    | Info x -> printfn "Info: %s" x
+    | Warn x -> printfn "Warn: %s" x
+    | Error(x, e) -> printfn "Error: %s \r\nex:%O" x e
 
 type TestState = int * int * byte[] list
 
@@ -106,37 +113,27 @@ let create (network : MailboxProcessor<Network>) id =
             let! result = agent.PostAndAsyncReply  (f, deserialize data)
             return serialize result }
     network.Post (Register (id, rpc))
-//    agent.LogEntry.Add (printfn "%A")
+    agent.LogEntry.Add printLog
     agent, config
-    
-//let consoleLogger (entry : Entries.Entry) =
-//    let now = System.DateTime.UtcNow.ToString ()
-//    match entry.Level with
-//    | Error -> printfn "%s - %s [%A] '%s' \r\nException: %A" now entry.Source.Category entry.Level entry.Data.Message entry.Data.Exception
-//    | Warn -> printfn "%s - %s [%A] '%s'" now entry.Source.Category entry.Level entry.Data.Message
-//    | _ -> () // 
-
-
-//addLoggingTransport "console" { Transport.Send = consoleLogger }
 
 let makeLeader id network  =
     let l, config = create network id  
     l.Post (serialize <| Add 1)
-    Async.AwaitEvent (l.BecameLeader) |> Async.RunSynchronously
-//    send network id id (ClientCommand <| (serialize <| Add 1))
+    //l.BecameLeader.Add (fun t -> printfn "%O became leader of term %i" id t)
+    Async.AwaitEvent (l.BecameLeader) |> Async.RunSynchronously |> ignore
     l, config
-    
 
 let createPeer silent (network : MailboxProcessor<Network>) (leader : RaftAgent<TestState>) =
     let id = Guid.NewGuid()
     printfn "creating peer: %s" (short id)
     let p, config = create network id 
+    //p.BecameLeader.Add (printfn "%O became leader of term %i" id)
     if not silent then
         p.Changes.Add(fun _ -> printf ".")
     async {
-        let! x = Async.StartChild (Async.AwaitEvent(p.Started))
+        let! awaitStarted = Async.StartChild (Async.AwaitEvent(p.Started))
         leader.AddPeer config.Id 
-        do! x } 
+        do! awaitStarted } 
     |> Async.RunSynchronously
     p, config
 
@@ -149,15 +146,30 @@ let randomOp () =
 
 let validate (peers : RaftAgent<TestState> list) =
     let isValid =
-        seq { yield! peers }
-        |> Seq.map (fun x -> x.State)
+        peers
+        |> Seq.map (fun x -> x.State.State)
         |> Seq.distinct
         |> Seq.length = 1
     if isValid = false then
-        peers |> List.iter (fun x -> 
-            let a, b, _ = x.State
-            printfn "State: %A %i %i" x.Id a b   )
-    let _, s, _ = peers.Head.State
+        peers 
+        |> List.iter (fun x -> 
+            let a, b, c = x.State.State
+            let l =
+                List.map deserialize c
+                |> List.rev
+                |> List.mapi (fun i (x : Calc) -> i, x)
+            printfn "State: %A %i %i \r\n%A" x.Id a b l)
+
+        peers
+        |> List.iter (fun x -> 
+            Log.query x.State.Log Persistence.Logs.Query.All
+            |> Seq.map (fun e ->
+                match e.Content with
+                | LogContent.Command data -> deserialize<Calc> data |> sprintf "%A"
+                | _ -> "")
+            |> Seq.toList
+            |> printfn "\r\n%A")
+    let _, s, _ = peers.Head.State.State
     isValid, s 
 
 let disposePeers (peers : RaftAgent<TestState> list) =
@@ -177,9 +189,7 @@ let awaitPeers (peers : RaftAgent<TestState> list) =
         peers
         |> List.map (fun x -> x.Changes) 
         |> List.reduce (fun s p -> Event.merge s p)// (peers.Head.Changes) 
-
     printfn "waiting for replication to finish"
-
     awaitEvent x 2000.0
 
 let randomPeer (peers : RaftAgent<TestState> list) =
@@ -207,16 +217,43 @@ let isolateSome silent =
         let network = makeNetwork()
         let leaderId = Guid.NewGuid()
         let leader,_ = makeLeader leaderId network
-        let peers = leader :: ([0..2] |> List.map (fun _ -> fst <| createPeer silent network leader))
-        for x = 0 to 250 do
-            if x = 50 then network.Post Isolate
-            if x = 65 then network.Post (IsolateX leaderId)
-            if x = 135 then network.Post Isolate
-            if x = 190  then network.Post Heal
-            do! Async.Sleep 50
+        let peers = 
+            leader :: ([0..3] 
+            |> List.map (fun _ -> fst <| createPeer silent network leader))
+        let ops = [0..100] |> List.map (fun _ -> randomOp ())
+        ops |> List.iteri (fun x op ->
+        //for x = 0 to 100 do
+            if x = 20  then network.Post Isolate
+            if x = 40  then network.Post (IsolateX leaderId)
+            if x = 60  then network.Post Isolate
+            if x = 80 then network.Post Heal
+            System.Threading.Thread.Sleep 100
             if not silent then printf "*"
-            leader.Post ((randomOp()))
-        awaitPeers (peers) |> ignore
+            leader.Post op)
+        awaitPeers peers |> ignore
+        let isValid = validate peers
+        printfn "OPS: \r\n%A" (ops |> List.map deserialize<Calc>)
+        network.PostAndReply (fun rc -> Shutdown rc)
+        disposePeers peers
+        return isValid } 
+
+let isolateSome' silent =
+    async {
+        let network = makeNetwork()
+        let leaderId = Guid.NewGuid()
+        let leader,_ = makeLeader leaderId network
+        let peers = 
+            leader :: ([0..3] 
+            |> List.map (fun _ -> fst <| createPeer silent network leader))
+        for x = 0 to 250 do
+            if x = 50  then network.Post Isolate
+            if x = 65  then network.Post (IsolateX leaderId)
+            if x = 135 then network.Post Isolate
+            if x = 190 then network.Post Heal
+            do! Async.Sleep 100
+            if not silent then printf "*"
+            leader.Post (randomOp())
+        awaitPeers peers |> ignore
         let isValid = validate peers
         network.PostAndReply (fun rc -> Shutdown rc)
         disposePeers peers
@@ -272,10 +309,10 @@ let isolate2 silent =
 
 [<EntryPoint>]
 let main argv = 
-    let silent = false
-//    Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
+    let silent = true
+    Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
     Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
-//    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
+    //Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
 //    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
     Console.ReadLine () |> ignore
     0

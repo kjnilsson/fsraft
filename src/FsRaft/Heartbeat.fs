@@ -8,7 +8,7 @@ module Heartbeat =
 
     type Heartbeat<'T> (leaderId, ep : Endpoint, send : Endpoint -> RaftProtocol -> Async<RaftProtocol>, add : Endpoint -> RaftProtocol -> unit, initial : RaftState<'T>, log) =
         let peerId, _, _ = ep
-        do printfn "new heartbeat: %A" (ep)
+        //do debug "new heartbeat: %A" (ep)
         let rpc state =
             async {
                 let v = Lenses.configPeer ep |> Lens.get state

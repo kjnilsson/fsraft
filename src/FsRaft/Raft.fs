@@ -5,43 +5,11 @@ open System.IO
 open FSharpx
 open Nessos.FsPickler
 
-[<AutoOpen>]
-module Raft =
 
-    open Messages
+module Application =
     open Persistence
-    open Microsoft.FSharp.Reflection
-
-    type Identifier = Rpc.Identifier
-
-    type RaftConfig =
-        { Id : Endpoint
-          RpcFactory : ((Identifier -> byte[] -> Async<byte[]>) -> ((Identifier -> byte[] -> Async<byte[] option>) * IDisposable)) option
-          Register : unit -> unit
-          LogStream : Stream 
-          TermStream : Stream }
-
-    let pickler = new FsPickler()
-
-    let deserialize (x:byte[]) =
-        use s = new IO.MemoryStream(x)
-        pickler.Deserialize<RaftProtocol> s
-
-    let serialize (x: RaftProtocol) =
-        use s = new MemoryStream()
-        pickler.Serialize (s, x)
-        s.ToArray()
 
     let shortEp (id, _, _) = short id
-
-    let random = Random ()
-
-    let inline typeName (x : RaftProtocol) = 
-        match FSharpValue.GetUnionFields(x, typeof<RaftProtocol>) with
-        | case, _ -> case.Name
-
-    let electionTimout () = 
-        random.Next (RaftConstants.electionTimeoutFrom, RaftConstants.electionTimeoutTo)
 
     let applyConfigFollower config state =
         { state with Config = config }
@@ -64,11 +32,9 @@ module Raft =
         |> Seq.fold (fun (s, changes) e ->
             match e.Content with
             | Command cmd when e.TermIndex.Index <= commitIndex -> 
-                if e.TermIndex.Index <= state.CommitIndex then failwith "noooo"
-                #if DEBUG
+                if e.TermIndex.Index <= s.CommitIndex then failwith "noooo"
                 log (Debug (sprintf "raft :: %s applying command for index: %i, commitIndex: %i" (shortEp state.Id) e.TermIndex.Index commitIndex))
-                #endif
-                let newState = applyCommand cmd state.State
+                let newState = applyCommand cmd s.State
                 { s with
                     CommitIndex = e.TermIndex.Index
                     State = newState }, (cmd, isLeader, newState) :: changes
@@ -113,6 +79,45 @@ module Raft =
             | _ -> state', changes
         else
             state, changes
+
+[<AutoOpen>]
+module Raft =
+
+    open Messages
+    open Persistence
+    open Application
+    open Microsoft.FSharp.Reflection
+
+    type Identifier = Rpc.Identifier
+
+    type RaftConfig =
+        { Id : Endpoint
+          RpcFactory : ((Identifier -> byte[] -> Async<byte[]>) -> ((Identifier -> byte[] -> Async<byte[] option>) * IDisposable)) option
+          Register : unit -> unit
+          LogStream : Stream 
+          TermStream : Stream }
+
+    let pickler = new FsPickler()
+
+    let deserialize (x:byte[]) =
+        use s = new IO.MemoryStream(x)
+        pickler.Deserialize<RaftProtocol> s
+
+    let serialize (x: RaftProtocol) =
+        use s = new MemoryStream()
+        pickler.Serialize (s, x)
+        s.ToArray()
+
+    let shortEp (id, _, _) = short id
+
+    let random = Random ()
+
+    let inline typeName (x : RaftProtocol) = 
+        match FSharpValue.GetUnionFields(x, typeof<RaftProtocol>) with
+        | case, _ -> case.Name
+
+    let electionTimout () = 
+        random.Next (RaftConstants.electionTimeoutFrom, RaftConstants.electionTimeoutTo)
 
     let castVote currentTerm (lastLogTermIndex : TermIndex) (theirLastLogTermIndex : TermIndex) =
         match theirLastLogTermIndex, lastLogTermIndex with
@@ -161,16 +166,17 @@ module Raft =
             log (Warn (sprintf "raft :: %s leader: in joint mode or peer already exists - can't remove peer: %s" (shortEp state.Id) (shortEp peerId)))
             state        
 
-    type RaftAgent<'TState when 'TState : equality> (config : RaftConfig, initialState : 'TState, apply) =
+    type RaftAgent<'TState when 'TState : equality> (config : RaftConfig, initialState : 'TState, apply : byte[] -> 'TState -> 'TState ) =
         let id, _, _ = config.Id
         let ep = config.Id
         let shortId = (short id)
         // logging
         let logger = Event<RaftLogEntry>() // TODO replace with a logger that isn't synchronous
+        let info msg = info "raft" logger msg
         let debug msg = debug "raft" logger msg
         let warn msg = warn "raft" logger msg
 
-        let mutable clientState : 'TState = initialState
+        let mutable clientState = Unchecked.defaultof<RaftState<'TState>>
 
         do debug "%s pending: started" shortId
 
@@ -184,7 +190,7 @@ module Raft =
                     else aer.PrevLogTermIndex }
 
         let started = Event<unit> ()
-        let becameLeader = Event<unit> ()
+        let becameLeader = Event<int64> ()
         let clusterChanges = Event<ClusterChange> ()
         let changes = Event<byte[] * bool * 'TState> ()
 
@@ -243,7 +249,8 @@ module Raft =
                 
                 //update next and match index for all peers
                 let state =
-                    Lenses.configPeers |> Lens.get state
+                    Lenses.configPeers 
+                    |> Lens.get state
                     |> Map.fold (fun s k _ ->
                         State.exec (Lenses.peerModifier k (fun _ -> Some (Log.lastTermIndex state.Log).Index) (fun _ -> Some 0)) s) state
 
@@ -251,7 +258,7 @@ module Raft =
                     dispose heartbeat
                     follow s
                 
-                becameLeader.Trigger ()
+                becameLeader.Trigger state.Term.Current
 
                 let rec inner state = async {
 
@@ -260,7 +267,7 @@ module Raft =
 
                     let state = heartbeat.State state
                     List.iter changes.Trigger newChanges
-                    clientState <- state.State
+                    clientState <- state
 
                     let! fromEp, msg, rc = receive ()
                     let from, _, _  = fromEp
@@ -271,17 +278,17 @@ module Raft =
                         Option.iter (fun (rc : AsyncReplyChannel<RaftProtocol>) -> rc.Reply Exit) rc
                         printfn "exiting"
                     | AppendEntriesRpc aer when aer.Term >= state.Term.Current ->
-                        debug "%s leader: AppendEntriesRpc received with greater or equal term %i from %A - stepping down" shortId aer.Term from
+                        info "%s leader: AppendEntriesRpc received with greater or equal term %i from %O - stepping down" shortId aer.Term from
                         inbox.Post(fromEp, msg, rc) // self post and handle as follower
                         return! follow (setTerm aer.Term state)
 
                     | AppendEntriesResult res when not res.Success && res.Term > state.Term.Current ->
-                        debug "%s leader: AppendEntriesResult with greater Term %i received from %A - stepping down" shortId res.Term from
+                        info "%s leader: AppendEntriesResult with greater Term %i received from %O - stepping down" shortId res.Term from
                         inbox.Post(fromEp, msg, rc) // self post and handle as follower
                         return! follow (setTerm res.Term state)
                         
                     | AppendEntriesResult res when not res.Success -> // decrement next index for peer
-                        debug "%s leader: append entries not successful - decrementing next index for peer: %s" shortId (short from) 
+                        debug "%s leader: append entries not successful - decrementing next index for peer: %s lastentrytermindex: %i" shortId (short from) res.LastEntryTermIndex.Index
                         let update =
                             Lenses.configPeer fromEp
                             |> Lens.update (Option.map
@@ -309,18 +316,18 @@ module Raft =
                     | RequestVoteRpc rvr when rvr.Term > state.Term.Current || state.Term.VotedFor = None ->
                         match castVote rvr.Term (Log.lastTermIndex state.Log) rvr.LastLogTermIndex with
                         | Some reply -> 
-                            debug "%s leader: RequestVoteRpc received with greater term %i > %i - stepping down" shortId rvr.Term state.Term.Current
+                            info "%s leader: RequestVoteRpc received with greater term %i > %i - stepping down" shortId rvr.Term state.Term.Current
                             debug "%s leader: RequestVoteRpc voted for: %s in term: %i" shortId (short from) rvr.Term
                             Option.iter (fun (rc: AsyncReplyChannel<RaftProtocol>) -> rc.Reply (VoteResult reply)) rc
                             let state' = setTermVotedFor state rvr.Term from
                             return! follow state'
                         | None -> 
-                            debug "%s leader: RequestVoteRpc received with greater term %i > %i - stepping down" shortId rvr.Term state.Term.Current 
+                            info "%s leader: RequestVoteRpc received with greater term %i > %i - stepping down" shortId rvr.Term state.Term.Current 
                             //TODO self post
                             return! follow <| setTerm rvr.Term state 
 
                     | AddPeer peerId ->
-                        debug "%s leader: AddPeer %A" shortId peerId
+                        info "%s leader: AddPeer %A" shortId peerId
                         return! inner (addPeer logger.Trigger clusterChanges state peerId)
 
                     | RemovePeer peerId ->
@@ -440,6 +447,7 @@ module Raft =
                         printfn "exiting"
                         dispose state
                         Option.iter (fun (rc : AsyncReplyChannel<RaftProtocol>) -> rc.Reply Exit) rc
+
                     | AppendEntriesRpc aer when aer.Term < state.Term.Current ->
                         debug "%s follower: AppendEntriesRpc received with lower term: %i current term: %i" shortId aer.Term state.Term.Current 
                         match rc with
@@ -448,7 +456,7 @@ module Raft =
                         return! follow state
 
                     | AppendEntriesRpc aer when not (Log.isConsistent state.Log aer.PrevLogTermIndex) ->
-                        debug "%s follower: AppendEntriesRpc received with inconsistent log from: %s request previous termindex: %A" shortId (short from) (aer.PrevLogTermIndex)
+                        debug "%s follower: AppendEntriesRpc received with inconsistent log from: %s request previous termindex: %A current commit %i" shortId (short from) (aer.PrevLogTermIndex.Term, aer.PrevLogTermIndex.Index) state.CommitIndex
                         match rc with
                         | Some rc -> 
                             debug "%s follower: AppendEntriesRpc replying to %s" shortId (short from)
@@ -459,9 +467,7 @@ module Raft =
                     | AppendEntriesRpc aer ->
                         let logIndexCount = state.Log.Index.Count
                         let entries = aer.Entries |> List.filter (fun x -> x.TermIndex.Index > state.CommitIndex)
-                        #if DEBUG
-                        if entries.Length > 0 then debug "%s follower: AppendEntriesRpc %i logs received" shortId entries.Length
-                        #endif
+                        if entries.Length > 0 then debug "%s follower: AppendEntriesRpc %i logs received, request prev termindex: %A %s" shortId entries.Length (aer.PrevLogTermIndex.Term, aer.PrevLogTermIndex.Index) (state.show())
                         let state', newChanges =
                             { state with
                                 Leader = Some aer.LeaderId
@@ -470,16 +476,21 @@ module Raft =
                             |> applyLogsFollower logger.Trigger apply aer.LeaderCommit
 
                         List.iter changes.Trigger newChanges
-                        clientState <- state'.State
+                        clientState <- state'
 
                         match rc with
                         | Some rc ->
                             result aer true state' |> rc.Reply
                         | None -> ()
 
+                        (*
+                        if state.Log.Index.Count > state'.Log.Index.Count then
+                            warn "%s follower: index count after AppendEntriesRpc decreased from %i to %i" shortId state.Log.Index.Count state'.Log.Index.Count
+
                         if not (aer.PrevLogTermIndex.Index + aer.Entries.Length >= state'.Log.Index.Count) then
-                            printfn "UGH: %s %A lic: %i after: %i new changes %i commitIndex %i entries: %i" shortId aer.PrevLogTermIndex logIndexCount (state'.Log.Index.Count) (newChanges.Length) state.CommitIndex entries.Length
+                            warn "UGH: %s %A lic: %i after: %i new changes %i commitIndex %i entries: %i" shortId aer.Term logIndexCount (state'.Log.Index.Count) (newChanges.Length) state.CommitIndex entries.Length
                         else ()
+                            *)
                         return! follow state'
                     
                     | RequestVoteRpc _ when not (containsPeer state fromEp) ->
@@ -550,7 +561,7 @@ module Raft =
                             RaftState<'TState>.create ep initialState logContext termContext
                             |> applyLogsFollower logger.Trigger apply aer.LeaderCommit  
 
-                        clientState <- s.State
+                        clientState <- s
 
                         List.iter changes.Trigger newChanges
 
