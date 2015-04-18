@@ -82,9 +82,9 @@ module RaftTests_castVote =
 
         let raftState = RaftState<int>.create id 0 context termContext |> addEntries 5
          
-        let result, _ = Raft.applyLogs ignore false (fun c s -> s) apply 2 raftState
+        let result, _ = Application.applyLogs ignore false (fun c s -> s) apply 2 raftState
         assertEqual 2 (!appliedCount)
-        let result = Raft.applyLogs ignore false (fun c s -> s) apply 5 result
+        let result = Application.applyLogs ignore false (fun c s -> s) apply 5 result
         assertEqual 5 (!appliedCount)
 
     [<Test>]
@@ -98,7 +98,7 @@ module RaftTests_castVote =
 
         let raftState = RaftState<_>.create id 0 context termContext |> addEntries 5
 
-        let result, _ = Raft.applyLogs ignore false (fun _ s -> s) apply 7 raftState
+        let result, _ = Application.applyLogs ignore false (fun _ s -> s) apply 7 raftState
         assertEqual 5 result.CommitIndex
 
     [<Test>]
@@ -119,7 +119,7 @@ module RaftTests_castVote =
         let stateConfig = Joint(c1, c2' )
         let state = { state with Config = stateConfig }
         
-        let result = Raft.applyConfigLeader ignore config state
+        let result = Application.applyConfigLeader ignore config state
         match result.Config with
         | Normal n -> 
             assertEqual n c2'

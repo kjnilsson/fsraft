@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <!--This file represents the results of running a test suite-->
-<test-results name="/Users/karlnilsson/code/kjnilsson/fsraft/tests/FsRaft.Test/bin/Debug/FsRaft.Test.dll" total="31" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2015-02-07" time="10:56:57">
-  <environment nunit-version="2.6.3.13283" clr-version="2.0.50727.1433" os-version="Unix 14.0.0.0" platform="Unix" cwd="/Users/karlnilsson/code/kjnilsson/fsraft" machine-name="oryx.local" user="karlnilsson" user-domain="oryx.local" />
+<test-results name="/Users/karlnilsson/code/kjnilsson/fsraft/tests/FsRaft.Test/bin/Debug/FsRaft.Test.dll" total="31" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2015-04-18" time="10:18:41">
+  <environment nunit-version="2.6.3.13283" clr-version="2.0.50727.1433" os-version="Unix 14.1.0.0" platform="Unix" cwd="/Users/karlnilsson/code/kjnilsson/fsraft" machine-name="oryx.local" user="karlnilsson" user-domain="oryx.local" />
   <culture-info current-culture="en-GB" current-uiculture="en-GB" />
-  <test-suite type="Assembly" name="/Users/karlnilsson/code/kjnilsson/fsraft/tests/FsRaft.Test/bin/Debug/FsRaft.Test.dll" executed="True" result="Success" success="True" time="0.666" asserts="0">
+  <test-suite type="Assembly" name="/Users/karlnilsson/code/kjnilsson/fsraft/tests/FsRaft.Test/bin/Debug/FsRaft.Test.dll" executed="True" result="Success" success="True" time="0.427" asserts="0">
     <results>
-      <test-suite type="Namespace" name="FsRaft" executed="True" result="Success" success="True" time="0.372" asserts="0">
+      <test-suite type="Namespace" name="FsRaft" executed="True" result="Success" success="True" time="0.358" asserts="0">
         <results>
-          <test-suite type="Namespace" name="Test" executed="True" result="Success" success="True" time="0.372" asserts="0">
+          <test-suite type="Namespace" name="Test" executed="True" result="Success" success="True" time="0.358" asserts="0">
             <results>
-              <test-suite type="TestFixture" name="RaftTests_castVote" executed="True" result="Success" success="True" time="0.371" asserts="0">
+              <test-suite type="TestFixture" name="RaftTests_castVote" executed="True" result="Success" success="True" time="0.357" asserts="0">
                 <results>
-                  <test-case name="FsRaft.Test.RaftTests_castVote.applyConfigLeader should only move to Normal configuration if the state is in Joint mode and the log matches the configuration" executed="True" result="Success" success="True" time="0.315" asserts="0" />
+                  <test-case name="FsRaft.Test.RaftTests_castVote.applyConfigLeader should only move to Normal configuration if the state is in Joint mode and the log matches the configuration" executed="True" result="Success" success="True" time="0.304" asserts="0" />
                   <test-case name="FsRaft.Test.RaftTests_castVote.applyLogs follower should not advance commit index beyond the highest index of all received logs" executed="True" result="Success" success="True" time="0.036" asserts="0" />
-                  <test-case name="FsRaft.Test.RaftTests_castVote.applyLogs should not apply a command entries twice when commit index is incremented" executed="True" result="Success" success="True" time="0.003" asserts="0" />
+                  <test-case name="FsRaft.Test.RaftTests_castVote.applyLogs should not apply a command entries twice when commit index is incremented" executed="True" result="Success" success="True" time="0.002" asserts="0" />
                   <test-case name="FsRaft.Test.RaftTests_castVote.castVote should grant vote if candidates last log term is greater than ours" executed="True" result="Success" success="True" time="0.001" asserts="0" />
-                  <test-case name="FsRaft.Test.RaftTests_castVote.castVote should grant vote if candidates last log term is the same as ours and their log index is at least as great as ours" executed="True" result="Success" success="True" time="0.001" asserts="0" />
+                  <test-case name="FsRaft.Test.RaftTests_castVote.castVote should grant vote if candidates last log term is the same as ours and their log index is at least as great as ours" executed="True" result="Success" success="True" time="0.000" asserts="0" />
                   <test-case name="FsRaft.Test.RaftTests_castVote.castVote should not grant vote if requesters term is higher but index is lower" executed="True" result="Success" success="True" time="0.000" asserts="0" />
                   <test-case name="FsRaft.Test.RaftTests_castVote.castVote should not grant vote when candidates last log index is lower than peers last log index" executed="True" result="Success" success="True" time="0.000" asserts="0" />
                 </results>
@@ -24,28 +24,28 @@
           </test-suite>
         </results>
       </test-suite>
-      <test-suite type="TestFixture" name="LogPersistanceTests" executed="True" result="Success" success="True" time="0.141" asserts="0">
+      <test-suite type="TestFixture" name="LogPersistanceTests" executed="True" result="Success" success="True" time="0.030" asserts="0">
         <results>
-          <test-case name="LogPersistanceTests.makeContext should recreate the index" executed="True" result="Success" success="True" time="0.009" asserts="0" />
-          <test-case name="LogPersistanceTests.query All should return all available records" executed="True" result="Success" success="True" time="0.003" asserts="0" />
-          <test-case name="LogPersistanceTests.query From should be inclusive of start index" executed="True" result="Success" success="True" time="0.104" asserts="0" />
-          <test-case name="LogPersistanceTests.query Range should be non inclusive of start index and inclusive of end index" executed="True" result="Success" success="True" time="0.002" asserts="0" />
-          <test-case name="LogPersistanceTests.tryGet should resurn Some item if index present" executed="True" result="Success" success="True" time="0.002" asserts="0" />
+          <test-case name="LogPersistanceTests.makeContext should recreate the index" executed="True" result="Success" success="True" time="0.006" asserts="0" />
+          <test-case name="LogPersistanceTests.query All should return all available records" executed="True" result="Success" success="True" time="0.002" asserts="0" />
+          <test-case name="LogPersistanceTests.query From should be inclusive of start index" executed="True" result="Success" success="True" time="0.001" asserts="0" />
+          <test-case name="LogPersistanceTests.query Range should be non inclusive of start index and inclusive of end index" executed="True" result="Success" success="True" time="0.001" asserts="0" />
+          <test-case name="LogPersistanceTests.tryGet should resurn Some item if index present" executed="True" result="Success" success="True" time="0.001" asserts="0" />
           <test-case name="LogPersistanceTests.tryGet should return none if index not present" executed="True" result="Success" success="True" time="0.001" asserts="0" />
           <test-case name="LogPersistanceTests.writeRecord should not allow gaps in the record history to be written" executed="True" result="Success" success="True" time="0.001" asserts="0" />
-          <test-case name="LogPersistanceTests.writeRecord should overwrite index if it exists and remove all higher indices" executed="True" result="Success" success="True" time="0.004" asserts="0" />
+          <test-case name="LogPersistanceTests.writeRecord should overwrite index if it exists and remove all higher indices" executed="True" result="Success" success="True" time="0.003" asserts="0" />
           <test-case name="LogPersistanceTests.writeRecord should return an updated index when writing another record" executed="True" result="Success" success="True" time="0.001" asserts="0" />
           <test-case name="LogPersistanceTests.writeRecord should return an updated index when writing first record" executed="True" result="Success" success="True" time="0.006" asserts="2" />
         </results>
       </test-suite>
-      <test-suite type="TestFixture" name="LogTests" executed="True" result="Success" success="True" time="0.130" asserts="0">
+      <test-suite type="TestFixture" name="LogTests" executed="True" result="Success" success="True" time="0.018" asserts="0">
         <results>
-          <test-case name="LogTests.append should truncate older logs" executed="True" result="Success" success="True" time="0.005" asserts="0" />
+          <test-case name="LogTests.append should truncate older logs" executed="True" result="Success" success="True" time="0.003" asserts="0" />
           <test-case name="LogTests.hasEntryFromTerm should return false for empty index" executed="True" result="Success" success="True" time="0.002" asserts="0" />
-          <test-suite type="ParameterizedTest" name="hasEntryFromTerm test case" executed="True" result="Success" success="True" time="0.011" asserts="0">
+          <test-suite type="ParameterizedTest" name="hasEntryFromTerm test case" executed="True" result="Success" success="True" time="0.007" asserts="0">
             <results>
-              <test-case name="LogTests.hasEntryFromTerm test case(6,False)" executed="True" result="Success" success="True" time="0.002" asserts="0" />
-              <test-case name="LogTests.hasEntryFromTerm test case(5,True)" executed="True" result="Success" success="True" time="0.001" asserts="0" />
+              <test-case name="LogTests.hasEntryFromTerm test case(6,False)" executed="True" result="Success" success="True" time="0.001" asserts="0" />
+              <test-case name="LogTests.hasEntryFromTerm test case(5,True)" executed="True" result="Success" success="True" time="0.000" asserts="0" />
               <test-case name="LogTests.hasEntryFromTerm test case(4,True)" executed="True" result="Success" success="True" time="0.000" asserts="0" />
               <test-case name="LogTests.hasEntryFromTerm test case(3,True)" executed="True" result="Success" success="True" time="0.000" asserts="0" />
               <test-case name="LogTests.hasEntryFromTerm test case(2,True)" executed="True" result="Success" success="True" time="0.000" asserts="0" />

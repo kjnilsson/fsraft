@@ -310,9 +310,9 @@ let isolate2 silent =
 [<EntryPoint>]
 let main argv = 
     let silent = true
-    Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
-    Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
-    //Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
+    //Async.RunSynchronously (basic silent) |> printfn "basic is: %A"
+    //Async.RunSynchronously (isolateSome silent) |> printfn "isolateOne is: %A"
+    Async.RunSynchronously (isolate2 silent) |> printfn "isolate2 is: %A"
 //    Async.RunSynchronously (restore silent) |> printfn "restore is: %A"
     Console.ReadLine () |> ignore
     0

@@ -23,7 +23,7 @@ module Application =
             |> Lens.update (fun context -> Log.increment context entry) Lenses.log
         | _ -> state
 
-    let internal applyLogs log isLeader applyConfig applyCommand commitIndex state =
+    let applyLogs log isLeader applyConfig applyCommand commitIndex state =
         // this could potentially be slow for a leader if replication is much further
         // ahead of the commit index
         // we need FROM query as we need to apply cluster config ahead of the commit index
